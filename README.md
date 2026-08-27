@@ -1,16 +1,100 @@
 # Crew Compliance Checker
 
-Simple Streamlit app that totals crew hours over a 28-day window and flags Captains and First Officers over 100 hours as an EASA violation.
+Local Streamlit MVP that screens a crew roster for **potential** flight-time, duty-time, and rest issues under a selected regulatory framework.
 
-## Run
+**Upload a crew roster. Detect potential crew FTL compliance issues in seconds.**
+
+This is a screening and review tool for small airlines, charter operators, aviation consultants, and crew planning teams. It is **not** an approved compliance-monitoring system, not a regulator, not legal advice, and not a guarantee that a roster is legally compliant.
+
+## Problem
+
+Crew planners need a fast way to see whether a spreadsheet roster *might* conflict with high-value FTL limits before a specialist review. Manual checks are slow; a generic “ask an LLM if this is legal” approach is not acceptable.
+
+## Key features (V1)
+
+- CSV and XLSX upload with column mapping
+- Normalized internal roster model (rules never depend on spreadsheet headers)
+- Deterministic compliance engine (no LLM deciding legality)
+- EASA Subpart FTL screening rules (see below)
+- FAA 14 CFR Part 117 screening rules (passenger-carrying Part 121 context)
+- Structured findings with citations, evidence, assumptions, and limitations
+- Filters and finding detail
+- CSV and Excel report export
+
+PDF export is deferred.
+
+Pricing ($29/month or $290/year) is a product requirement only. Payment processing is not implemented.
+
+## Architecture
+
+```
+Upload → validate → normalize → deterministic ruleset → structured findings → Streamlit UI / export
+```
+
+The engine lives in `src/crew_compliance/` and does not import Streamlit. The UI is `app/streamlit_app.py`.
+
+V1 rules are developer-defined objects with frozen parameters registered in a ruleset. V2 can overlay user parameters onto the same `Rule` protocol without rewriting the engine.
+
+## Technology
+
+Python, Streamlit, pandas, openpyxl, pytest.
+
+## Supported regulatory frameworks
+
+| Framework | V1 status |
+|---|---|
+| EASA Air Ops Subpart FTL | Implemented (partial screening set) |
+| FAA 14 CFR Part 117 | Implemented (partial screening set; passenger Part 121 applicability) |
+| UK CAA | Not implemented |
+| Transport Canada | Not implemented |
+| CASA / CAO 48.1 | Not implemented |
+| ICAO | Not an enforceable violation framework in this product |
+
+## Currently implemented rules
+
+See `docs/RULES.md`. Do not assume FDP tables, standby, reserve, augmented crews, or operator-specific schemes are checked.
+
+## Known limitations
+
+- Naive operator-local times (no timezone conversion)
+- Incomplete roster lookback produces **insufficient data** notices, not a pass
+- Duty span may be used as an FDP proxy when true FDP is not in the file
+- Exceptions, reduced rest, commander’s discretion, and full CS-FTL.1 / Part 117 tables are not modeled
+- One operator file cannot prove “all flying for any certificate holder” (14 CFR § 117.23(a))
+
+## Local setup
+
+Python 3.9+.
 
 ```bash
+cd crew-compliance-checker
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-streamlit run app.py
+pip install -e .
 ```
 
-Upload a CSV with columns `Date`, `Flight`, `Captain`, and `Hours`. A `First Officer` column is optional.
+## Run the Streamlit application
 
-Use `sample_flights.csv` for a demo: Jane Hale (Captain) and Tom Chen (First Officer) exceed 100 hours in the latest 28 days; Mark Ortiz and Priya Shah do not.
+```bash
+streamlit run app/streamlit_app.py
+```
+
+Use `samples/sample_roster.csv` for a synthetic demo. Do not upload confidential airline rosters to shared machines or logs.
+
+## Run tests
+
+```bash
+pytest
+```
+
+## Regulatory disclaimer
+
+Findings are labeled as potential compliance issues or insufficient-data notices that **require review**. The software does not determine legality and must not be used as the sole basis for releasing a roster.
+
+## Roadmap
+
+- **V1:** this local screening MVP
+- **V2:** user-configurable rules and additional jurisdictions
+- **V3:** SaaS, accounts, subscriptions
+- **V4:** APIs and scheduling-system integrations

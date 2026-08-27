@@ -1,0 +1,19 @@
+crew_id,crew_name,position,home_base,duty_date,duty_start,duty_end,flight_id,flight_hours,is_positioning,start_location
+JH1,Jane Hale,Captain,LHR,2026-07-01,06:00,16:00,BA050,10.0,false,LHR
+JH1,Jane Hale,Captain,LHR,2026-07-25,06:00,15:00,BA101,8.2,false,LHR
+JH1,Jane Hale,Captain,LHR,2026-07-26,06:00,16:00,BA102,9.1,false,LHR
+JH1,Jane Hale,Captain,LHR,2026-07-27,06:00,15:30,BA103,8.4,false,LHR
+JH1,Jane Hale,Captain,LHR,2026-07-28,06:00,15:00,BA104,7.9,false,LHR
+JH1,Jane Hale,Captain,LHR,2026-07-29,06:00,16:00,BA105,8.6,false,LHR
+JH1,Jane Hale,Captain,LHR,2026-07-30,06:00,16:00,BA106,9.0,false,LHR
+JH1,Jane Hale,Captain,LHR,2026-07-31,06:00,15:30,BA107,8.3,false,LHR
+JH1,Jane Hale,Captain,LHR,2026-08-01,06:00,16:00,BA108,8.8,false,LHR
+JH1,Jane Hale,Captain,LHR,2026-08-02,06:00,14:30,BA109,7.5,false,LHR
+JH1,Jane Hale,Captain,LHR,2026-08-03,06:00,15:00,BA110,8.1,false,LHR
+JH1,Jane Hale,Captain,LHR,2026-08-04,06:00,16:00,BA111,9.2,false,LHR
+JH1,Jane Hale,Captain,LHR,2026-08-05,06:00,15:00,BA112,8.0,false,LHR
+JH1,Jane Hale,Captain,LHR,2026-08-06,06:00,14:30,BA113,7.7,false,LHR
+MO1,Mark Ortiz,Captain,LHR,2026-08-10,08:00,13:00,BA201,4.5,false,LHR
+MO1,Mark Ortiz,Captain,LHR,2026-08-12,08:00,14:00,BA202,5.0,false,LHR
+MO1,Mark Ortiz,Captain,LHR,2026-08-15,08:00,15:00,BA203,6.2,false,LHR
+MO1,Mark Ortiz,Captain,LHR,2026-08-18,08:00,13:30,BA204,4.8,false,LHR

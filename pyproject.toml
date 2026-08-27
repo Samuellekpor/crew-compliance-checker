@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crew-compliance-checker"
+version = "0.1.0"
+description = "Screen crew rosters for potential EASA and FAA flight/duty/rest compliance issues."
+requires-python = ">=3.9"
+readme = "README.md"
+dependencies = [
+  "streamlit==1.48.0",
+  "pandas==2.2.3",
+  "openpyxl==3.1.5",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==8.3.4"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"
