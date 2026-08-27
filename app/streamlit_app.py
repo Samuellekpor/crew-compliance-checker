@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from html import escape
+from pathlib import Path
+
 import streamlit as st
 
 from crew_compliance.engine.runner import run_analysis
@@ -10,57 +13,99 @@ from crew_compliance.ingestion.mapping import CANONICAL_FIELDS, auto_map_columns
 from crew_compliance.ingestion.normalize import normalize_roster
 from crew_compliance.reporting.export import DISCLAIMER, export_csv, export_xlsx, findings_frame
 
-st.set_page_config(page_title="Crew Compliance Checker", layout="wide", page_icon="✈")
+st.set_page_config(page_title="Crew Compliance Checker", layout="wide", page_icon="·")
 
 bootstrap()
 
-CSS = """
-<style>
-    .block-container { padding-top: 1.4rem; }
-    h1 { letter-spacing: 0.02em; }
-    .disclaimer {
-        background: #f4f1ea;
-        border-left: 4px solid #8a6d3b;
-        padding: 0.8rem 1rem;
-        color: #3d3426;
-        font-size: 0.92rem;
-    }
-    .kpi { background: #0f2744; color: #f7f4ee; padding: 0.85rem 1rem; border-radius: 6px; }
-    .kpi span { display: block; font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: #c9b896; }
-    .kpi strong { font-size: 1.6rem; }
-</style>
-"""
+THEME_CSS = (Path(__file__).parent / "theme.css").read_text(encoding="utf-8")
+
+
+def inject_theme() -> None:
+    st.markdown(
+        f"<style>{THEME_CSS}</style><div class='app-grain' aria-hidden='true'></div>",
+        unsafe_allow_html=True,
+    )
+
+
+def bezel(inner: str, extra_class: str = "") -> str:
+    return (
+        f"<div class='bezel {extra_class}'><div class='bezel-inner'>{inner}</div></div>"
+    )
+
+
+def section_heading(eyebrow: str, title: str) -> None:
+    st.markdown(
+        f"<div class='section-head rise'><span class='eyebrow'>{eyebrow}</span>"
+        f"<h2>{title}</h2></div>",
+        unsafe_allow_html=True,
+    )
 
 
 def main() -> None:
-    st.markdown(CSS, unsafe_allow_html=True)
-    st.title("Crew Compliance Checker")
-    st.caption("Upload a crew roster. Detect potential crew FTL compliance issues in seconds.")
-    st.markdown(f'<div class="disclaimer">{DISCLAIMER}</div>', unsafe_allow_html=True)
+    inject_theme()
+    st.markdown(
+        """
+        <div class="island-nav">
+            <span class="dot" aria-hidden="true"></span>
+            <span class="mark">Local screening · V1</span>
+        </div>
+        <div class="hero">
+            <div class="rise d1">
+                <span class="eyebrow">Flight time · duty · rest</span>
+                <h1 class="hero-title">Crew<br>Compliance<br>Checker</h1>
+                <p class="lede">Upload a crew roster. Detect potential FTL compliance issues in seconds — then review with a qualified aviation professional.</p>
+            </div>
+            <div class="hero-aside rise d3">
+        """
+        + bezel(
+            "<div class='aside-kicker'>Deterministic engine</div>"
+            "<p class='aside-copy'>Cited limits. No model deciding legality. Findings require review.</p>"
+        )
+        + "</div></div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(bezel(f"<p class='notice-copy'>{DISCLAIMER}</p>", "rise d2"), unsafe_allow_html=True)
 
-    st.header("Upload & configuration")
+    section_heading("01  /  Configuration", "Upload & framework")
     implemented = {fid: fw.display_name for fid, fw in FRAMEWORKS.items()}
-    stub_labels = {fid: f"{label} (not implemented in V1)" for fid, label in STUB_FRAMEWORKS}
+    stub_labels = {fid: f"{label} — not in V1" for fid, label in STUB_FRAMEWORKS}
     options = {**implemented, **stub_labels}
-    framework_id = st.selectbox(
-        "Regulatory framework",
-        options=list(options.keys()),
-        format_func=lambda key: options[key],
-    )
-    if framework_id in FRAMEWORKS:
-        st.info(FRAMEWORKS[framework_id].applicability)
-    else:
-        st.warning("This framework is listed for roadmap purposes only and cannot be analyzed in V1.")
 
-    dayfirst = st.selectbox(
-        "Date format",
-        options=[False, True],
-        format_func=lambda v: "YYYY-MM-DD / ISO (recommended)" if not v else "DD/MM/YYYY (day first)",
-    )
-    uploaded = st.file_uploader("Upload roster (CSV or XLSX)", type=["csv", "xlsx"])
+    left, right = st.columns((1.15, 0.85), gap="large")
+    with left:
+        framework_id = st.selectbox(
+            "Regulatory framework",
+            options=list(options.keys()),
+            format_func=lambda key: options[key],
+        )
+        dayfirst = st.selectbox(
+            "Date format",
+            options=[False, True],
+            format_func=lambda v: "YYYY-MM-DD / ISO" if not v else "DD/MM/YYYY (day first)",
+        )
+    with right:
+        if framework_id in FRAMEWORKS:
+            st.markdown(
+                bezel(f"<p class='notice-copy'>{FRAMEWORKS[framework_id].applicability}</p>"),
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                bezel(
+                    "<p class='notice-copy'>This jurisdiction is listed for the product roadmap only and cannot be analyzed in V1.</p>"
+                ),
+                unsafe_allow_html=True,
+            )
+
+    uploaded = st.file_uploader("Roster file — CSV or XLSX", type=["csv", "xlsx"])
 
     if uploaded is None:
-        st.info("No file uploaded yet. A synthetic sample is available at `samples/sample_roster.csv`.")
+        st.markdown(
+            bezel(
+                "<p class='notice-copy'>No file yet. A synthetic demonstration roster lives at <em>samples/sample_roster.csv</em>. Do not use confidential airline data on a shared machine.</p>"
+            ),
+            unsafe_allow_html=True,
+        )
         return
     if framework_id not in FRAMEWORKS:
         return
@@ -71,8 +116,8 @@ def main() -> None:
         st.error(str(exc))
         return
 
-    st.subheader("Column mapping")
-    st.caption("Rules never depend on spreadsheet headers. Confirm the mapping, then analyze.")
+    section_heading("02  /  Normalization", "Column mapping")
+    st.caption("The engine never reads spreadsheet headers. Confirm the mapping, then analyze.")
     auto = auto_map_columns(list(table.columns))
     headers = ["— not mapped —"] + list(table.columns)
     mapping: dict[str, str | None] = {}
@@ -85,7 +130,7 @@ def main() -> None:
 
     st.dataframe(table.head(20), use_container_width=True, hide_index=True)
 
-    if st.button("Analyze roster", type="primary"):
+    if st.button("Analyze roster"):
         rows = table.to_dict(orient="records")
         try:
             roster = normalize_roster(rows, mapping, source_name=uploaded.name, dayfirst=bool(dayfirst))
@@ -113,30 +158,49 @@ def main() -> None:
             for issue in issues:
                 st.write(f"- Row {issue.source_row or '—'}: {issue.message}")
 
-    st.header("Compliance summary")
+    section_heading("03  /  Screening", "Compliance summary")
     counts = result.counts_by_severity()
-    k1, k2, k3, k4 = st.columns(4)
-    k1.markdown(f'<div class="kpi"><span>Crew reviewed</span><strong>{result.crew_reviewed}</strong></div>', unsafe_allow_html=True)
-    k2.markdown(f'<div class="kpi"><span>Duties analyzed</span><strong>{result.duties_analyzed}</strong></div>', unsafe_allow_html=True)
-    k3.markdown(f'<div class="kpi"><span>Flights analyzed</span><strong>{result.flights_analyzed}</strong></div>', unsafe_allow_html=True)
-    k4.markdown(
-        f'<div class="kpi"><span>Potential findings</span><strong>{result.potential_issue_count()}</strong></div>',
+    st.markdown(
+        f"""
+        <div class="bento">
+          {bezel(
+            f"<span class='kpi-label'>Potential findings</span><div class='kpi-value lg'>{result.potential_issue_count()}</div>"
+            f"<p class='kpi-note'>Issues that require professional review — not regulatory determinations.</p>",
+            "span-7 rise d1",
+          )}
+          {bezel(
+            f"<span class='kpi-label'>Crew reviewed</span><div class='kpi-value'>{result.crew_reviewed}</div>",
+            "span-5 rise d2",
+          )}
+          {bezel(
+            f"<span class='kpi-label'>Duties analyzed</span><div class='kpi-value'>{result.duties_analyzed}</div>",
+            "span-4 rise d3",
+          )}
+          {bezel(
+            f"<span class='kpi-label'>Flights analyzed</span><div class='kpi-value'>{result.flights_analyzed}</div>",
+            "span-4 rise d4",
+          )}
+          {bezel(
+            f"<span class='kpi-label'>Insufficient data</span><div class='kpi-value'>{result.insufficient_data_count()}</div>",
+            "span-4 rise d5",
+          )}
+        </div>
+        <div class="severity-row">
+          {bezel(f"<span class='kpi-label'>Critical</span><em>{counts['critical']}</em>", "sev rise d1")}
+          {bezel(f"<span class='kpi-label'>High</span><em>{counts['high']}</em>", "sev rise d2")}
+          {bezel(f"<span class='kpi-label'>Medium</span><em>{counts['medium']}</em>", "sev rise d3")}
+          {bezel(f"<span class='kpi-label'>Low</span><em>{counts['low']}</em>", "sev rise d4")}
+          {bezel(f"<span class='kpi-label'>Coverage</span><em>{result.insufficient_data_count()}</em>", "sev rise d5")}
+        </div>
+        <p class="ruleset-stamp">{result.framework_name} · {result.ruleset_id} {result.ruleset_version}</p>
+        """,
         unsafe_allow_html=True,
     )
-    s1, s2, s3, s4, s5 = st.columns(5)
-    s1.metric("Critical", counts["critical"])
-    s2.metric("High", counts["high"])
-    s3.metric("Medium", counts["medium"])
-    s4.metric("Low", counts["low"])
-    s5.metric("Insufficient data", result.insufficient_data_count())
-    st.caption(
-        f"{result.framework_name} · ruleset {result.ruleset_id} {result.ruleset_version}"
-    )
 
-    st.header("Findings")
+    section_heading("04  /  Review", "Findings")
     frame = findings_frame(result)
     if frame.empty:
-        st.write("No findings were generated.")
+        st.markdown(bezel("<p class='notice-copy'>No findings were generated for this roster.</p>"), unsafe_allow_html=True)
         return
 
     f1, f2, f3, f4, f5 = st.columns(5)
@@ -160,9 +224,9 @@ def main() -> None:
     display_cols = ["severity", "crew_name", "date", "rule_name", "actual", "required", "difference", "kind"]
     st.dataframe(view[display_cols], use_container_width=True, hide_index=True)
 
-    st.header("Finding details")
+    section_heading("05  /  Evidence", "Finding details")
     if view.empty:
-        st.write("No rows match the current filters.")
+        st.markdown(bezel("<p class='notice-copy'>No rows match the current filters.</p>"), unsafe_allow_html=True)
     else:
         labels = {
             row.finding_id: f"{row.severity.upper()} · {row.crew_name} · {row.rule_id}"
@@ -170,21 +234,30 @@ def main() -> None:
         }
         selected_id = st.selectbox("Select a finding", list(labels.keys()), format_func=lambda k: labels[k])
         selected = next(f for f in result.findings if f.finding_id == selected_id)
-        st.markdown(f"**{selected.rule_name}** (`{selected.rule_id}`)")
-        st.write(f"Regulatory reference: {selected.citation}")
-        st.write(f"Crew member: {selected.crew_name} ({selected.crew_id})")
-        st.write(f"Duty: {selected.duty_id or '—'} · Flight: {selected.flight_id or '—'}")
-        st.write(f"Actual: {selected.actual} {selected.units} · Required: {selected.required} · Difference: {selected.difference}")
-        st.write(selected.explanation)
-        st.json(selected.evidence)
-        st.markdown("**Assumptions**")
-        for item in selected.assumptions:
-            st.write(f"- {item}")
-        st.markdown("**Limitations**")
-        for item in selected.limitations:
-            st.write(f"- {item}")
+        assumptions = "".join(f"<li>{escape(item)}</li>" for item in selected.assumptions)
+        limitations = "".join(f"<li>{escape(item)}</li>" for item in selected.limitations)
+        st.markdown(
+            bezel(
+                f"<span class='eyebrow'>{escape(selected.citation)}</span>"
+                f"<h2 style='margin-top:0.4rem'>{escape(selected.rule_name)}</h2>"
+                f"<p class='notice-copy'>{escape(selected.explanation)}</p>"
+                "<div class='detail-grid' style='margin-top:1.25rem'>"
+                f"<div><div class='meta-line'>Crew</div><p class='meta-val'>{escape(selected.crew_name)} ({escape(selected.crew_id)})</p></div>"
+                f"<div><div class='meta-line'>Duty / flight</div><p class='meta-val'>{escape(selected.duty_id or '—')} · {escape(selected.flight_id or '—')}</p></div>"
+                f"<div><div class='meta-line'>Actual</div><p class='meta-val'>{escape(str(selected.actual))} {escape(selected.units)}</p></div>"
+                f"<div><div class='meta-line'>Required · difference</div><p class='meta-val'>{escape(str(selected.required))} · {escape(str(selected.difference))}</p></div>"
+                "</div>"
+            ),
+            unsafe_allow_html=True,
+        )
+        with st.expander("Evidence, assumptions, and limitations"):
+            st.json(selected.evidence)
+            st.markdown("**Assumptions**")
+            st.markdown(assumptions, unsafe_allow_html=True)
+            st.markdown("**Limitations**")
+            st.markdown(limitations, unsafe_allow_html=True)
 
-    st.header("Report")
+    section_heading("06  /  Record", "Export the screening")
     c1, c2 = st.columns(2)
     c1.download_button("Export CSV", data=export_csv(result), file_name="crew_compliance_report.csv", mime="text/csv")
     c2.download_button(
