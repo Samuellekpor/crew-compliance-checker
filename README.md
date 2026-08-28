@@ -80,6 +80,20 @@ pip install -e .
 streamlit run app/streamlit_app.py
 ```
 
+## Deploy on Streamlit Community Cloud
+
+The GitHub repository is **private**. Community Cloud can deploy it only after you connect GitHub and grant Streamlit access to private repositories.
+
+1. Open [Deploy on Community Cloud](https://share.streamlit.io/deploy?repository=Samuellekpor/crew-compliance-checker&branch=main&mainModule=streamlit_app.py) and sign in with GitHub.
+2. If the repo does not appear, open **Settings → Linked accounts** in Community Cloud and authorize private-repo access.
+3. Confirm:
+   - Repository: `Samuellekpor/crew-compliance-checker`
+   - Branch: `main`
+   - Main file path: `streamlit_app.py`
+4. Deploy. The public URL will look like `https://<name>.streamlit.app`.
+
+**Operational caution:** Community Cloud apps are reachable on the public internet. Roster files are processed on Streamlit’s infrastructure. Do not upload confidential airline rosters to the hosted app. Keep sensitive screening on a local `streamlit run`.
+
 Use `samples/sample_roster.csv` for a synthetic demo. Do not upload confidential airline rosters to shared machines or logs.
 
 ## Run tests
