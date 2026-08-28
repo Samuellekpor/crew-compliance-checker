@@ -9,7 +9,7 @@ description = "Screen crew rosters for potential EASA and FAA flight/duty/rest c
 requires-python = ">=3.9"
 readme = "README.md"
 dependencies = [
-  "streamlit==1.48.0",
+  "streamlit==1.61.1",
   "pandas==2.2.3",
   "openpyxl==3.1.5",
 ]

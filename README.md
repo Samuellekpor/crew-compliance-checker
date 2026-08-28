@@ -64,14 +64,14 @@ See `docs/RULES.md`. Do not assume FDP tables, standby, reserve, augmented crews
 
 ## Local setup
 
-Python 3.9+.
+Python 3.12 recommended (3.9+ locally). Community Cloud should use **3.12**, not 3.14.
 
 ```bash
 cd crew-compliance-checker
-python3 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-pip install -e .
+pip install -e ".[dev]"
 ```
 
 ## Run the Streamlit application
@@ -90,7 +90,10 @@ The GitHub repository is **private**. Community Cloud can deploy it only after y
    - Repository: `Samuellekpor/crew-compliance-checker`
    - Branch: `main`
    - Main file path: `streamlit_app.py`
+   - **Advanced → Python version: 3.12** (do not leave the default if it is 3.13/3.14)
 4. Deploy. The public URL will look like `https://<name>.streamlit.app`.
+
+If an existing app is stuck installing packages, reboot or recreate it after this Python 3.12 setting. `.python-version` and `runtime.txt` in the repo request 3.12; Community Cloud still requires the Advanced setting to match.
 
 **Operational caution:** Community Cloud apps are reachable on the public internet. Roster files are processed on Streamlit’s infrastructure. Do not upload confidential airline rosters to the hosted app. Keep sensitive screening on a local `streamlit run`.
 
