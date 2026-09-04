@@ -7,6 +7,7 @@ from typing import Iterable
 from crew_compliance.domain.enums import FindingKind
 from crew_compliance.domain.models import DutyPeriod, Finding, Roster, RuleMetadata
 from crew_compliance.engine.findings import build_finding
+from crew_compliance.engine.opening_support import apply_opening_hours, missing_opening_finding
 from crew_compliance.engine.protocol import EvaluationContext, Rule
 from crew_compliance.engine.severity import hour_exceedance_severity
 from crew_compliance.engine.windows import overlap_hours
@@ -46,9 +47,10 @@ class CalendarDayHoursRule:
         return self.metadata.required_inputs or frozenset({"crew_id", "duty_date", "duty_hours"})
 
     def evaluate(self, roster: Roster, ctx: EvaluationContext) -> list[Finding]:
-        del ctx
         window_days = int(self.metadata.parameters["window_days"])
         limit = float(self.metadata.parameters["limit_hours"])
+        opening_window = str(self.metadata.parameters.get("opening_window") or "")
+        opening_metric = self.metadata.parameters.get("opening_metric") or self.metric
         findings: list[Finding] = []
         by_crew: dict[str, list[DutyPeriod]] = defaultdict(list)
         for duty in roster.duties:
@@ -90,23 +92,40 @@ class CalendarDayHoursRule:
                 continue
             if not points:
                 continue
+            if ctx.opening_balances is not None and opening_window:
+                if ctx.opening_balances.get(crew_id, opening_window, opening_metric) is None:
+                    findings.append(
+                        missing_opening_finding(
+                            self.metadata,
+                            crew_id=crew_id,
+                            crew_name=name,
+                            window_type=opening_window,
+                            limit=limit,
+                        )
+                    )
+                    continue
 
             min_date = min(p[1] for p in points)
-            worst: tuple[float, date, date, DutyPeriod] | None = None
+            worst: tuple[float, date, date, DutyPeriod, dict] | None = None
             incomplete_under = False
             for _, end_date, _ in points:
                 start_date = end_date - timedelta(days=window_days - 1)
-                total = sum(h for _, d, h in points if start_date <= d <= end_date)
+                in_period = sum(h for _, d, h in points if start_date <= d <= end_date)
                 incomplete = min_date > start_date
+                total, still_incomplete, opening_ev = apply_opening_hours(
+                    in_period, incomplete, ctx, crew_id, opening_window, opening_metric
+                )
+                if total is None:
+                    continue
                 if total > limit:
                     anchor = next(p[0] for p in points if p[1] == end_date)
                     if worst is None or total > worst[0]:
-                        worst = (total, start_date, end_date, anchor)
-                elif incomplete:
+                        worst = (total, start_date, end_date, anchor, opening_ev)
+                elif still_incomplete:
                     incomplete_under = True
 
             if worst:
-                total, start_date, end_date, anchor = worst
+                total, start_date, end_date, anchor, opening_ev = worst
                 findings.append(
                     build_finding(
                         self.metadata,
@@ -125,6 +144,7 @@ class CalendarDayHoursRule:
                             "window_days": window_days,
                             "metric": self.metric,
                             "lookback_incomplete": min_date > start_date,
+                            **opening_ev,
                         },
                         explanation=(
                             f"{name} accrued {total:.1f} {self.metric.replace('_', ' ')} hours "
@@ -134,7 +154,7 @@ class CalendarDayHoursRule:
                         ),
                         extra_limitations=(
                             ("Roster lookback does not fully cover this window.",)
-                            if min_date > start_date
+                            if min_date > start_date and opening_ev.get("opening_balance_status") == "not_provided"
                             else ()
                         ),
                     )
@@ -148,6 +168,7 @@ class CalendarDayHoursRule:
                         crew_name=name,
                         severity=hour_exceedance_severity(0, limit),
                         required=limit,
+                        evidence={"opening_balance_status": "not_provided"} if ctx.opening_balances is None else {},
                         explanation=(
                             f"The roster does not cover a full {window_days} consecutive "
                             f"calendar days for {name}. A value at or below {limit:.0f} hours "
@@ -166,8 +187,9 @@ class CalendarYearFlightRule:
         return frozenset({"crew_id", "duty_date", "flight_hours"})
 
     def evaluate(self, roster: Roster, ctx: EvaluationContext) -> list[Finding]:
-        del ctx
         limit = float(self.metadata.parameters["limit_hours"])
+        opening_window = str(self.metadata.parameters.get("opening_window") or "annual")
+        opening_metric = self.metadata.parameters.get("opening_metric") or "flight_time"
         findings: list[Finding] = []
         by_crew: dict[str, list[DutyPeriod]] = defaultdict(list)
         for duty in roster.duties:
@@ -188,13 +210,31 @@ class CalendarYearFlightRule:
                     )
                 )
                 continue
+            if ctx.opening_balances is not None:
+                if ctx.opening_balances.get(crew_id, opening_window, opening_metric) is None:
+                    findings.append(
+                        missing_opening_finding(
+                            self.metadata,
+                            crew_id=crew_id,
+                            crew_name=name,
+                            window_type=opening_window,
+                            limit=limit,
+                        )
+                    )
+                    continue
             years = {event[1].year for event in events}
             for year in sorted(years):
                 year_events = [e for e in events if e[1].year == year]
-                total = sum(e[3] for e in year_events)
+                in_period = sum(e[3] for e in year_events)
                 min_date = min(e[1] for e in year_events)
                 max_date = max(e[1] for e in year_events)
                 full_year = min_date <= date(year, 1, 1) and max_date >= date(year, 12, 31)
+                incomplete = not full_year
+                total, still_incomplete, opening_ev = apply_opening_hours(
+                    in_period, incomplete, ctx, crew_id, opening_window, opening_metric
+                )
+                if total is None:
+                    continue
                 anchor = year_events[-1][0]
                 if total > limit:
                     findings.append(
@@ -208,7 +248,7 @@ class CalendarYearFlightRule:
                             required=limit,
                             event_time=anchor.event_time(),
                             duty_id=anchor.duty_id,
-                            evidence={"year": year, "full_year_covered": full_year},
+                            evidence={"year": year, "full_year_covered": full_year, **opening_ev},
                             explanation=(
                                 f"{name} accrued {total:.1f} operating flight hours in calendar "
                                 f"year {year}, which exceeds {limit:.0f} hours. This is a "
@@ -216,7 +256,7 @@ class CalendarYearFlightRule:
                             ),
                         )
                     )
-                elif not full_year:
+                elif still_incomplete:
                     findings.append(
                         build_finding(
                             self.metadata,
@@ -224,13 +264,13 @@ class CalendarYearFlightRule:
                             crew_id=crew_id,
                             crew_name=name,
                             severity=hour_exceedance_severity(0, limit),
-                            actual=round(total, 2),
+                            actual=round(in_period, 2),
                             required=limit,
                             event_time=anchor.event_time(),
-                            evidence={"year": year, "full_year_covered": False},
+                            evidence={"year": year, "full_year_covered": False, **opening_ev},
                             explanation=(
                                 f"The roster does not cover all of calendar year {year} for {name}. "
-                                f"Observed operating flight time is {total:.1f} hours, which is "
+                                f"Observed operating flight time is {in_period:.1f} hours, which is "
                                 f"at or below {limit:.0f}, but the year cannot be conclusively evaluated."
                             ),
                         )
@@ -246,9 +286,10 @@ class CalendarMonthsFlightRule:
         return frozenset({"crew_id", "duty_date", "flight_hours"})
 
     def evaluate(self, roster: Roster, ctx: EvaluationContext) -> list[Finding]:
-        del ctx
         limit = float(self.metadata.parameters["limit_hours"])
         months = int(self.metadata.parameters["window_months"])
+        opening_window = str(self.metadata.parameters.get("opening_window") or "12month")
+        opening_metric = self.metadata.parameters.get("opening_metric") or "flight_time"
         findings: list[Finding] = []
         by_crew: dict[str, list[DutyPeriod]] = defaultdict(list)
         for duty in roster.duties:
@@ -269,6 +310,18 @@ class CalendarMonthsFlightRule:
                     )
                 )
                 continue
+            if ctx.opening_balances is not None:
+                if ctx.opening_balances.get(crew_id, opening_window, opening_metric) is None:
+                    findings.append(
+                        missing_opening_finding(
+                            self.metadata,
+                            crew_id=crew_id,
+                            crew_name=name,
+                            window_type=opening_window,
+                            limit=limit,
+                        )
+                    )
+                    continue
             min_date = min(e[1] for e in events)
             month_ends = {(e[1].year, e[1].month) for e in events}
             worst = None
@@ -284,16 +337,21 @@ class CalendarMonthsFlightRule:
                     window_end = date(year + 1, 1, 1) - timedelta(days=1)
                 else:
                     window_end = date(year, month + 1, 1) - timedelta(days=1)
-                total = sum(e[3] for e in events if window_start <= e[1] <= window_end)
+                in_period = sum(e[3] for e in events if window_start <= e[1] <= window_end)
                 incomplete = min_date > window_start
+                total, still_incomplete, opening_ev = apply_opening_hours(
+                    in_period, incomplete, ctx, crew_id, opening_window, opening_metric
+                )
+                if total is None:
+                    continue
                 if total > limit:
                     anchor = next(e[0] for e in events if e[1].year == year and e[1].month == month)
                     if worst is None or total > worst[0]:
-                        worst = (total, window_start, window_end, anchor, incomplete)
-                elif incomplete:
+                        worst = (total, window_start, window_end, anchor, incomplete, opening_ev)
+                elif still_incomplete:
                     incomplete_under = True
             if worst:
-                total, window_start, window_end, anchor, incomplete = worst
+                total, window_start, window_end, anchor, incomplete, opening_ev = worst
                 findings.append(
                     build_finding(
                         self.metadata,
@@ -309,6 +367,7 @@ class CalendarMonthsFlightRule:
                             "window_start": window_start.isoformat(),
                             "window_end": window_end.isoformat(),
                             "lookback_incomplete": incomplete,
+                            **opening_ev,
                         },
                         explanation=(
                             f"{name} accrued {total:.1f} operating flight hours in the "
@@ -346,9 +405,10 @@ class RollingHoursOverlapRule:
         return frozenset({"crew_id", "duty_start", "duty_end"})
 
     def evaluate(self, roster: Roster, ctx: EvaluationContext) -> list[Finding]:
-        del ctx
         window_hours = float(self.metadata.parameters["window_hours"])
         limit = float(self.metadata.parameters["limit_hours"])
+        opening_window = str(self.metadata.parameters.get("opening_window") or "")
+        opening_metric = self.metadata.parameters.get("opening_metric")
         findings: list[Finding] = []
         by_crew: dict[str, list[DutyPeriod]] = defaultdict(list)
         for duty in roster.duties:
@@ -369,6 +429,18 @@ class RollingHoursOverlapRule:
                     )
                 )
                 continue
+            if ctx.opening_balances is not None and opening_window:
+                if ctx.opening_balances.get(crew_id, opening_window, opening_metric) is None:
+                    findings.append(
+                        missing_opening_finding(
+                            self.metadata,
+                            crew_id=crew_id,
+                            crew_name=name,
+                            window_type=opening_window,
+                            limit=limit,
+                        )
+                    )
+                    continue
             min_start = min(d.duty_start for d in intervals if d.duty_start)
             worst = None
             incomplete_under = False
@@ -376,19 +448,24 @@ class RollingHoursOverlapRule:
                 assert anchor.duty_end and anchor.duty_start
                 window_end = anchor.duty_end
                 window_start = window_end - timedelta(hours=window_hours)
-                total = sum(
+                in_period = sum(
                     overlap_hours(d.duty_start, d.duty_end, window_start, window_end)  # type: ignore[arg-type]
                     for d in intervals
                     if d.duty_start and d.duty_end
                 )
                 incomplete = min_start > window_start
+                total, still_incomplete, opening_ev = apply_opening_hours(
+                    in_period, incomplete, ctx, crew_id, opening_window, opening_metric
+                )
+                if total is None:
+                    continue
                 if total > limit:
                     if worst is None or total > worst[0]:
-                        worst = (total, window_start, window_end, anchor, incomplete)
-                elif incomplete:
+                        worst = (total, window_start, window_end, anchor, incomplete, opening_ev)
+                elif still_incomplete:
                     incomplete_under = True
             if worst:
-                total, window_start, window_end, anchor, incomplete = worst
+                total, window_start, window_end, anchor, incomplete, opening_ev = worst
                 findings.append(
                     build_finding(
                         self.metadata,
@@ -406,6 +483,7 @@ class RollingHoursOverlapRule:
                             "window_hours": window_hours,
                             "lookback_incomplete": incomplete,
                             "metric": self.metadata.parameters.get("metric", "duty_or_fdp_proxy"),
+                            **opening_ev,
                         },
                         explanation=(
                             f"{name} accrued {total:.1f} hours in the {window_hours:.0f}-hour "
@@ -445,10 +523,11 @@ class RollingFlightHoursRule:
         return frozenset({"crew_id", "flight_hours"})
 
     def evaluate(self, roster: Roster, ctx: EvaluationContext) -> list[Finding]:
-        del ctx
         window_hours = float(self.metadata.parameters["window_hours"])
         limit = float(self.metadata.parameters["limit_hours"])
         window_days = int(self.metadata.parameters.get("window_days", 0))
+        opening_window = str(self.metadata.parameters.get("opening_window") or "")
+        opening_metric = self.metadata.parameters.get("opening_metric") or "flight_time"
         findings: list[Finding] = []
         by_crew: dict[str, list[DutyPeriod]] = defaultdict(list)
         for duty in roster.duties:
@@ -469,26 +548,43 @@ class RollingFlightHoursRule:
                     )
                 )
                 continue
+            if ctx.opening_balances is not None and opening_window:
+                if ctx.opening_balances.get(crew_id, opening_window, opening_metric) is None:
+                    findings.append(
+                        missing_opening_finding(
+                            self.metadata,
+                            crew_id=crew_id,
+                            crew_name=name,
+                            window_type=opening_window,
+                            limit=limit,
+                        )
+                    )
+                    continue
             min_time = min(e[2] for e in events)
             worst = None
             incomplete_under = False
             for duty, day, event_time, _hours in events:
                 if window_days:
                     start_date = day - timedelta(days=window_days - 1)
-                    total = sum(h for _, d, _, h in events if start_date <= d <= day)
+                    in_period = sum(h for _, d, _, h in events if start_date <= d <= day)
                     window_start = datetime.combine(start_date, datetime.min.time())
                     incomplete = min(e[1] for e in events) > start_date
                 else:
                     window_start = event_time - timedelta(hours=window_hours)
-                    total = sum(h for _, _, t, h in events if window_start < t <= event_time)
+                    in_period = sum(h for _, _, t, h in events if window_start < t <= event_time)
                     incomplete = min_time > window_start
+                total, still_incomplete, opening_ev = apply_opening_hours(
+                    in_period, incomplete, ctx, crew_id, opening_window, opening_metric
+                )
+                if total is None:
+                    continue
                 if total > limit:
                     if worst is None or total > worst[0]:
-                        worst = (total, window_start, event_time, duty, incomplete)
-                elif incomplete:
+                        worst = (total, window_start, event_time, duty, incomplete, opening_ev)
+                elif still_incomplete:
                     incomplete_under = True
             if worst:
-                total, window_start, event_time, duty, incomplete = worst
+                total, window_start, event_time, duty, incomplete, opening_ev = worst
                 findings.append(
                     build_finding(
                         self.metadata,
@@ -505,6 +601,7 @@ class RollingFlightHoursRule:
                             "window_start": window_start.isoformat(),
                             "window_end": event_time.isoformat(),
                             "lookback_incomplete": incomplete,
+                            **opening_ev,
                         },
                         explanation=(
                             f"{name} accrued {total:.1f} operating flight hours in the evaluated "

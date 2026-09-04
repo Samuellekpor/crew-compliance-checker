@@ -56,7 +56,7 @@ def build_ruleset() -> Ruleset:
                 "Maximum flight time — 100 h / 28 consecutive days",
                 "ORO.FTL.210(b)(1)",
                 "Total operating flight time in any 28 consecutive calendar days shall not exceed 100 hours.",
-                {"window_days": 28, "limit_hours": 100},
+                {"window_days": 28, "limit_hours": 100, "opening_window": "28day", "opening_metric": "flight_time"},
             ),
             metric="flight_time",
         ),
@@ -66,7 +66,7 @@ def build_ruleset() -> Ruleset:
                 "Maximum flight time — 900 h / calendar year",
                 "ORO.FTL.210(b)(2)",
                 "Total operating flight time in any calendar year shall not exceed 900 hours.",
-                {"limit_hours": 900},
+                {"limit_hours": 900, "opening_window": "annual", "opening_metric": "flight_time"},
             )
         ),
         CalendarMonthsFlightRule(
@@ -75,7 +75,7 @@ def build_ruleset() -> Ruleset:
                 "Maximum flight time — 1000 h / 12 calendar months",
                 "ORO.FTL.210(b)(3)",
                 "Total operating flight time in any 12 consecutive calendar months shall not exceed 1000 hours.",
-                {"limit_hours": 1000, "window_months": 12},
+                {"limit_hours": 1000, "window_months": 12, "opening_window": "12month", "opening_metric": "flight_time"},
             )
         ),
         CalendarDayHoursRule(
@@ -84,7 +84,7 @@ def build_ruleset() -> Ruleset:
                 "Maximum duty — 60 h / 7 consecutive days",
                 "ORO.FTL.210(a)(1)",
                 "Total duty periods in any 7 consecutive calendar days shall not exceed 60 hours.",
-                {"window_days": 7, "limit_hours": 60},
+                {"window_days": 7, "limit_hours": 60, "opening_window": "7day", "opening_metric": "duty_hours"},
                 extra_lim=('The qualitative "spread as evenly as practicable" requirement is not evaluated.',),
             ),
             metric="duty_hours",
@@ -95,7 +95,7 @@ def build_ruleset() -> Ruleset:
                 "Maximum duty — 110 h / 14 consecutive days",
                 "ORO.FTL.210(a)(2)",
                 "Total duty periods in any 14 consecutive calendar days shall not exceed 110 hours.",
-                {"window_days": 14, "limit_hours": 110},
+                {"window_days": 14, "limit_hours": 110, "opening_window": "14day", "opening_metric": "duty_hours"},
             ),
             metric="duty_hours",
         ),
@@ -105,7 +105,7 @@ def build_ruleset() -> Ruleset:
                 "Maximum duty — 190 h / 28 consecutive days",
                 "ORO.FTL.210(a)(3)",
                 "Total duty periods in any 28 consecutive calendar days shall not exceed 190 hours.",
-                {"window_days": 28, "limit_hours": 190},
+                {"window_days": 28, "limit_hours": 190, "opening_window": "28day", "opening_metric": "duty_hours"},
             ),
             metric="duty_hours",
         ),

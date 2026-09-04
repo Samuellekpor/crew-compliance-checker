@@ -45,11 +45,26 @@ def normalize_header(value: str) -> str:
     return " ".join(str(value).strip().lower().replace("_", " ").split())
 
 
-def auto_map_columns(headers: list[str]) -> dict[str, str | None]:
+def auto_map_columns(
+    headers: list[str],
+    fields: tuple[str, ...] | None = None,
+    aliases: dict[str, tuple[str, ...]] | None = None,
+    prior: dict[str, str | None] | None = None,
+) -> dict[str, str | None]:
     lookup = {normalize_header(h): h for h in headers}
-    mapping: dict[str, str | None] = {field: None for field in CANONICAL_FIELDS}
-    for field, aliases in ALIASES.items():
-        for alias in aliases:
+    header_set = set(headers)
+    use_fields = fields or CANONICAL_FIELDS
+    use_aliases = aliases or ALIASES
+    mapping: dict[str, str | None] = {field: None for field in use_fields}
+    if prior:
+        for field in use_fields:
+            header = prior.get(field)
+            if header in header_set:
+                mapping[field] = header
+    for field, field_aliases in use_aliases.items():
+        if field not in mapping or mapping[field]:
+            continue
+        for alias in field_aliases:
             header = lookup.get(normalize_header(alias))
             if header:
                 mapping[field] = header

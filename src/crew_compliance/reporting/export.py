@@ -45,6 +45,9 @@ def _finding_row(finding: Finding) -> dict:
         "explanation": finding.explanation,
         "assumptions": " | ".join(finding.assumptions),
         "limitations": " | ".join(finding.limitations),
+        "opening_balance_status": finding.evidence.get("opening_balance_status", ""),
+        "opening_balance_hours": finding.evidence.get("opening_balance_hours", ""),
+        "opening_balance_as_of": finding.evidence.get("opening_balance_as_of", ""),
     }
 
 

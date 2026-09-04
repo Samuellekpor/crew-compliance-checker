@@ -4,10 +4,12 @@ import sys
 from html import escape
 from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parent.parent
+_APP = Path(__file__).resolve().parent
+_ROOT = _APP.parent
 _SRC = _ROOT / "src"
-if str(_SRC) not in sys.path:
-    sys.path.insert(0, str(_SRC))
+for _path in (_SRC, _APP):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
 
 import streamlit as st
 
@@ -15,9 +17,13 @@ from crew_compliance.engine.runner import run_analysis
 from crew_compliance.frameworks import FRAMEWORKS, STUB_FRAMEWORKS, bootstrap
 from crew_compliance.ingestion.common import IngestError
 from crew_compliance.ingestion.loader import load_table
-from crew_compliance.ingestion.mapping import CANONICAL_FIELDS, auto_map_columns
+from crew_compliance.ingestion.mapping import ALIASES, CANONICAL_FIELDS
 from crew_compliance.ingestion.normalize import normalize_roster
+from crew_compliance.ingestion.opening import normalize_opening_balances
+from crew_compliance.ingestion.schemas import OPENING_ALIASES, OPENING_FIELDS
 from crew_compliance.reporting.export import DISCLAIMER, export_csv, export_xlsx, findings_frame
+
+from mapping_ui import column_mapping_form
 
 st.set_page_config(page_title="Crew Compliance Checker", layout="wide", page_icon="·")
 
@@ -53,7 +59,7 @@ def main() -> None:
         """
         <div class="island-nav">
             <span class="dot" aria-hidden="true"></span>
-            <span class="mark">Local screening · V1</span>
+            <span class="mark">Local screening · V2</span>
         </div>
         <div class="hero">
             <div class="rise d1">
@@ -104,6 +110,15 @@ def main() -> None:
             )
 
     uploaded = st.file_uploader("Roster file — CSV or XLSX", type=["csv", "xlsx"])
+    opening_file = st.file_uploader(
+        "Opening balances — CSV or XLSX (optional)",
+        type=["csv", "xlsx"],
+        help=(
+            "Carry-over hours already accrued before this roster file. Optional at the app level. "
+            "Once uploaded, a missing row for a crew member and window type is treated as "
+            "insufficient data — never as zero."
+        ),
+    )
 
     if uploaded is None:
         st.markdown(
@@ -124,17 +139,36 @@ def main() -> None:
 
     section_heading("02  /  Normalization", "Column mapping")
     st.caption("The engine never reads spreadsheet headers. Confirm the mapping, then analyze.")
-    auto = auto_map_columns(list(table.columns))
-    headers = ["— not mapped —"] + list(table.columns)
-    mapping: dict[str, str | None] = {}
-    cols = st.columns(3)
-    for i, field in enumerate(CANONICAL_FIELDS):
-        default = auto.get(field)
-        index = headers.index(default) if default in headers else 0
-        selected = cols[i % 3].selectbox(field, headers, index=index, key=f"map_{field}")
-        mapping[field] = None if selected == "— not mapped —" else selected
-
+    mapping = column_mapping_form(
+        list(table.columns),
+        fields=CANONICAL_FIELDS,
+        aliases=ALIASES,
+        key_prefix="roster",
+    )
     st.dataframe(table.head(20), use_container_width=True, hide_index=True)
+
+    opening_mapping: dict[str, str | None] | None = None
+    opening_table = None
+    if opening_file is not None:
+        try:
+            opening_table = load_table(opening_file.getvalue(), filename=opening_file.name)
+        except IngestError as exc:
+            st.error(str(exc))
+            return
+        st.caption(
+            "Opening-balance columns. Shared crew fields reuse the roster mapping when headers match."
+        )
+        prior = {field: mapping.get(field) for field in OPENING_FIELDS}
+        if not prior.get("role"):
+            prior["role"] = mapping.get("position")
+        opening_mapping = column_mapping_form(
+            list(opening_table.columns),
+            fields=OPENING_FIELDS,
+            aliases=OPENING_ALIASES,
+            key_prefix="opening",
+            prior=prior,
+        )
+        st.dataframe(opening_table.head(20), use_container_width=True, hide_index=True)
 
     if st.button("Analyze roster"):
         rows = table.to_dict(orient="records")
@@ -148,10 +182,21 @@ def main() -> None:
             for issue in roster.validation_issues:
                 st.write(f"- Row {issue.source_row}: {issue.message}")
             return
+        opening_book = None
+        opening_issues = ()
+        if opening_table is not None and opening_mapping is not None and opening_file is not None:
+            opening_book = normalize_opening_balances(
+                opening_table.to_dict(orient="records"),
+                opening_mapping,
+                source_name=opening_file.name,
+                dayfirst=bool(dayfirst),
+            )
+            opening_issues = opening_book.validation_issues
         with st.spinner(f"Analyzing {len(roster.duties):,} duties..."):
-            result = run_analysis(roster, framework_id)
+            result = run_analysis(roster, framework_id, opening_balances=opening_book)
         st.session_state["result"] = result
         st.session_state["roster_issues"] = roster.validation_issues
+        st.session_state["opening_issues"] = opening_issues
         st.success("Analysis complete.")
 
     result = st.session_state.get("result")
@@ -159,10 +204,13 @@ def main() -> None:
         return
 
     issues = st.session_state.get("roster_issues") or ()
-    if issues:
-        with st.expander(f"Validation messages ({len(issues)})"):
+    opening_issues = st.session_state.get("opening_issues") or ()
+    if issues or opening_issues:
+        with st.expander(f"Validation messages ({len(issues) + len(opening_issues)})"):
             for issue in issues:
-                st.write(f"- Row {issue.source_row or '—'}: {issue.message}")
+                st.write(f"- Roster row {issue.source_row or '—'}: {issue.message}")
+            for issue in opening_issues:
+                st.write(f"- Opening-balances row {issue.source_row or '—'}: {issue.message}")
 
     section_heading("03  /  Screening", "Compliance summary")
     counts = result.counts_by_severity()
@@ -252,6 +300,7 @@ def main() -> None:
                 f"<div><div class='meta-line'>Duty / flight</div><p class='meta-val'>{escape(selected.duty_id or '—')} · {escape(selected.flight_id or '—')}</p></div>"
                 f"<div><div class='meta-line'>Actual</div><p class='meta-val'>{escape(str(selected.actual))} {escape(selected.units)}</p></div>"
                 f"<div><div class='meta-line'>Required · difference</div><p class='meta-val'>{escape(str(selected.required))} · {escape(str(selected.difference))}</p></div>"
+                f"<div><div class='meta-line'>Opening balance</div><p class='meta-val'>{escape(_opening_balance_label(selected.evidence))}</p></div>"
                 "</div>"
             ),
             unsafe_allow_html=True,
@@ -272,6 +321,24 @@ def main() -> None:
         file_name="crew_compliance_report.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+
+
+def _opening_balance_label(evidence: dict) -> str:
+    status = evidence.get("opening_balance_status")
+    if not status:
+        return "Not used by this check"
+    if status == "not_provided":
+        return "No opening-balances file uploaded"
+    if status == "missing":
+        window = evidence.get("opening_balance_window") or "this window"
+        return f"Missing for {window} — not assumed to be zero"
+    hours = evidence.get("opening_balance_hours")
+    as_of = evidence.get("opening_balance_as_of") or "unknown date"
+    if status == "applied":
+        return f"{hours} hours as of {as_of}"
+    if status == "not_applied_window_complete_in_roster":
+        return f"On file ({hours} h as of {as_of}) but not added — roster already covers the window"
+    return str(status)
 
 
 main()

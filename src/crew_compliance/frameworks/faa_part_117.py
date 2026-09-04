@@ -52,7 +52,7 @@ def build_ruleset() -> Ruleset:
                 "Flight time — 100 h / 672 consecutive hours",
                 "14 CFR § 117.23(b)(1)",
                 "No flightcrew member may accept an assignment if total flight time would exceed 100 hours in any 672 consecutive hours.",
-                {"window_hours": 672, "limit_hours": 100},
+                {"window_hours": 672, "limit_hours": 100, "opening_window": "672h", "opening_metric": "flight_time"},
             )
         ),
         RollingFlightHoursRule(
@@ -61,7 +61,7 @@ def build_ruleset() -> Ruleset:
                 "Flight time — 1000 h / 365 consecutive calendar days",
                 "14 CFR § 117.23(b)(2)",
                 "No flightcrew member may accept an assignment if total flight time would exceed 1,000 hours in any 365 consecutive calendar days.",
-                {"window_hours": 0, "window_days": 365, "limit_hours": 1000},
+                {"window_hours": 0, "window_days": 365, "limit_hours": 1000, "opening_window": "365day", "opening_metric": "flight_time"},
             )
         ),
         RollingHoursOverlapRule(
@@ -70,7 +70,7 @@ def build_ruleset() -> Ruleset:
                 "FDP — 60 h / 168 consecutive hours",
                 "14 CFR § 117.23(c)(1)",
                 "No flightcrew member may accept an assignment if total FDP would exceed 60 hours in any 168 consecutive hours.",
-                {"window_hours": 168, "limit_hours": 60, "metric": "fdp_proxy"},
+                {"window_hours": 168, "limit_hours": 60, "metric": "fdp_proxy", "opening_window": "168h", "opening_metric": "fdp"},
             )
         ),
         RollingHoursOverlapRule(
@@ -79,7 +79,7 @@ def build_ruleset() -> Ruleset:
                 "FDP — 190 h / 672 consecutive hours",
                 "14 CFR § 117.23(c)(2)",
                 "No flightcrew member may accept an assignment if total FDP would exceed 190 hours in any 672 consecutive hours.",
-                {"window_hours": 672, "limit_hours": 190, "metric": "fdp_proxy"},
+                {"window_hours": 672, "limit_hours": 190, "metric": "fdp_proxy", "opening_window": "672h", "opening_metric": "fdp"},
             )
         ),
         MinRestBeforeDutyRule(

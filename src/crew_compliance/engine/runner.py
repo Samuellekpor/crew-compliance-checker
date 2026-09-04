@@ -3,15 +3,26 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from crew_compliance.domain.models import AnalysisResult, Roster
+from crew_compliance.domain.opening import OpeningBalanceBook
 from crew_compliance.engine.protocol import EvaluationContext
 from crew_compliance.engine.registry import get_ruleset
 from crew_compliance.frameworks import bootstrap
 
 
-def run_analysis(roster: Roster, framework_id: str, ruleset_version: str | None = None) -> AnalysisResult:
+def run_analysis(
+    roster: Roster,
+    framework_id: str,
+    ruleset_version: str | None = None,
+    opening_balances: OpeningBalanceBook | None = None,
+) -> AnalysisResult:
     bootstrap()
     ruleset = get_ruleset(framework_id, ruleset_version)
-    ctx = EvaluationContext(framework_id, ruleset.id, ruleset.version)
+    ctx = EvaluationContext(
+        framework_id,
+        ruleset.id,
+        ruleset.version,
+        opening_balances=opening_balances,
+    )
     findings = []
     for rule in ruleset.rules:
         findings.extend(rule.evaluate(roster, ctx))
