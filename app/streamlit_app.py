@@ -24,6 +24,7 @@ from crew_compliance.ingestion.opening import normalize_opening_balances
 from crew_compliance.ingestion.schemas import CREDENTIAL_ALIASES, CREDENTIAL_FIELDS, OPENING_ALIASES, OPENING_FIELDS
 from crew_compliance.reporting.export import DISCLAIMER, export_csv, export_xlsx, findings_frame
 from crew_compliance.reporting.pdf import export_pdf
+from crew_compliance.reporting.templates import credential_template_xlsx, opening_balance_template_xlsx
 
 from mapping_ui import column_mapping_form
 
@@ -129,10 +130,24 @@ def main() -> None:
             "insufficient data — never as zero."
         ),
     )
+    st.download_button(
+        "Download opening-balances template",
+        data=opening_balance_template_xlsx(),
+        file_name="opening_balances_template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        help="Empty workbook with suggested headers. Column mapping remains flexible if a client file differs.",
+    )
     credential_file = st.file_uploader(
         "Licenses / qualifications / medicals — CSV or XLSX (optional)",
         type=["csv", "xlsx"],
         help="One row per crew member per credential. Missing expiry dates are flagged as insufficient data.",
+    )
+    st.download_button(
+        "Download credentials template",
+        data=credential_template_xlsx(),
+        file_name="credentials_template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        help="Empty workbook with suggested headers. Column mapping remains flexible if a client file differs.",
     )
 
     if uploaded is None:
