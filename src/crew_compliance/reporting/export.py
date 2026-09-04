@@ -108,6 +108,7 @@ def _summary_lines(result: AnalysisResult) -> list[str]:
         DISCLAIMER,
         f"Analyzed at (UTC naive local stamp): {result.analyzed_at.isoformat(timespec='seconds')}",
         f"Roster: {result.source_name}",
+        f"Date range screened: {_period_label(result)}",
         f"Framework: {result.framework_name} ({result.framework_id})",
         f"Ruleset: {result.ruleset_id} version {result.ruleset_version}",
         f"Crew reviewed: {result.crew_reviewed}",
@@ -120,3 +121,13 @@ def _summary_lines(result: AnalysisResult) -> list[str]:
             f"Medium: {counts['medium']}  Low: {counts['low']}"
         ),
     ]
+
+
+def period_label(result: AnalysisResult) -> str:
+    if result.period_start and result.period_end:
+        return f"{result.period_start.isoformat()} to {result.period_end.isoformat()}"
+    return "—"
+
+
+def _period_label(result: AnalysisResult) -> str:
+    return period_label(result)

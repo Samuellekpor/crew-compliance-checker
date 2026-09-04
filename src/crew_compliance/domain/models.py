@@ -178,6 +178,8 @@ class AnalysisResult:
     assumptions: tuple[str, ...]
     limitations: tuple[str, ...]
     validation_issues: tuple[ValidationIssue, ...]
+    period_start: date | None = None
+    period_end: date | None = None
 
     def counts_by_severity(self) -> dict[str, int]:
         counts = {s.value: 0 for s in Severity}

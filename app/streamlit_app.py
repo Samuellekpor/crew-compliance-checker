@@ -23,6 +23,7 @@ from crew_compliance.ingestion.normalize import normalize_roster
 from crew_compliance.ingestion.opening import normalize_opening_balances
 from crew_compliance.ingestion.schemas import CREDENTIAL_ALIASES, CREDENTIAL_FIELDS, OPENING_ALIASES, OPENING_FIELDS
 from crew_compliance.reporting.export import DISCLAIMER, export_csv, export_xlsx, findings_frame
+from crew_compliance.reporting.pdf import export_pdf
 
 from mapping_ui import column_mapping_form
 
@@ -102,6 +103,8 @@ def main() -> None:
             format_func=lambda n: f"{n} days",
             help="Used only when a credentials file is uploaded.",
         )
+        company_name = st.text_input("Company name (PDF branding)", placeholder="Operator name")
+        logo_file = st.file_uploader("Company logo (optional PNG or JPEG)", type=["png", "jpg", "jpeg"])
     with right:
         if framework_id in FRAMEWORKS:
             st.markdown(
@@ -374,13 +377,20 @@ def main() -> None:
             st.markdown(limitations, unsafe_allow_html=True)
 
     section_heading("06  /  Record", "Export the screening")
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     c1.download_button("Export CSV", data=export_csv(result), file_name="crew_compliance_report.csv", mime="text/csv")
     c2.download_button(
         "Export Excel",
         data=export_xlsx(result),
         file_name="crew_compliance_report.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    logo_bytes = logo_file.getvalue() if logo_file is not None else None
+    c3.download_button(
+        "Export PDF",
+        data=export_pdf(result, company_name=company_name, logo_bytes=logo_bytes),
+        file_name="crew_compliance_report.pdf",
+        mime="application/pdf",
     )
 
 

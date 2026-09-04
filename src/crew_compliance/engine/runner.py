@@ -35,6 +35,7 @@ def run_analysis(
             evaluate_credential_expiry(roster, ctx, credentials, credential_lookahead_days)
         )
     unique_flights = {d.flight_id for d in roster.duties if d.flight_id}
+    duty_dates = [d.duty_date for d in roster.duties]
     framework_name = {
         "easa": "EASA Air Ops — Subpart FTL",
         "faa_part_117": "FAA 14 CFR Part 117",
@@ -53,4 +54,6 @@ def run_analysis(
         assumptions=ruleset.assumptions,
         limitations=ruleset.limitations,
         validation_issues=roster.validation_issues,
+        period_start=min(duty_dates) if duty_dates else None,
+        period_end=max(duty_dates) if duty_dates else None,
     )
