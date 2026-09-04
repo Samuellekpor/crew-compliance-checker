@@ -32,12 +32,18 @@ def build_finding(
     event_time: datetime | None = None,
     evidence: dict[str, Any] | None = None,
     extra_limitations: tuple[str, ...] = (),
+    extra: str = "",
 ) -> Finding:
     diff = difference
     if diff is None and actual is not None and required is not None:
         diff = round(actual - required, 4)
     return Finding(
-        finding_id=make_finding_id(metadata.rule_id, crew_id, event_time, kind.value),
+        finding_id=make_finding_id(
+            metadata.rule_id,
+            crew_id,
+            event_time,
+            kind.value if not extra else f"{kind.value}|{extra}",
+        ),
         kind=kind,
         rule_id=metadata.rule_id,
         rule_name=metadata.name,

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from crew_compliance.domain.credentials import CredentialBook
 from crew_compliance.domain.models import AnalysisResult, Roster
 from crew_compliance.domain.opening import OpeningBalanceBook
+from crew_compliance.engine.credential_rules import evaluate_credential_expiry
 from crew_compliance.engine.protocol import EvaluationContext
 from crew_compliance.engine.registry import get_ruleset
 from crew_compliance.frameworks import bootstrap
@@ -14,6 +16,8 @@ def run_analysis(
     framework_id: str,
     ruleset_version: str | None = None,
     opening_balances: OpeningBalanceBook | None = None,
+    credentials: CredentialBook | None = None,
+    credential_lookahead_days: int = 30,
 ) -> AnalysisResult:
     bootstrap()
     ruleset = get_ruleset(framework_id, ruleset_version)
@@ -26,6 +30,10 @@ def run_analysis(
     findings = []
     for rule in ruleset.rules:
         findings.extend(rule.evaluate(roster, ctx))
+    if credentials is not None:
+        findings.extend(
+            evaluate_credential_expiry(roster, ctx, credentials, credential_lookahead_days)
+        )
     unique_flights = {d.flight_id for d in roster.duties if d.flight_id}
     framework_name = {
         "easa": "EASA Air Ops — Subpart FTL",

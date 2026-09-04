@@ -48,6 +48,9 @@ def _finding_row(finding: Finding) -> dict:
         "opening_balance_status": finding.evidence.get("opening_balance_status", ""),
         "opening_balance_hours": finding.evidence.get("opening_balance_hours", ""),
         "opening_balance_as_of": finding.evidence.get("opening_balance_as_of", ""),
+        "credential_type": finding.evidence.get("credential_type", ""),
+        "credential_detail": finding.evidence.get("credential_detail", ""),
+        "expiry_date": finding.evidence.get("expiry_date", ""),
     }
 
 

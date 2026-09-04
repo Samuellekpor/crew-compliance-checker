@@ -18,9 +18,10 @@ from crew_compliance.frameworks import FRAMEWORKS, STUB_FRAMEWORKS, bootstrap
 from crew_compliance.ingestion.common import IngestError
 from crew_compliance.ingestion.loader import load_table
 from crew_compliance.ingestion.mapping import ALIASES, CANONICAL_FIELDS
+from crew_compliance.ingestion.credentials import normalize_credentials
 from crew_compliance.ingestion.normalize import normalize_roster
 from crew_compliance.ingestion.opening import normalize_opening_balances
-from crew_compliance.ingestion.schemas import OPENING_ALIASES, OPENING_FIELDS
+from crew_compliance.ingestion.schemas import CREDENTIAL_ALIASES, CREDENTIAL_FIELDS, OPENING_ALIASES, OPENING_FIELDS
 from crew_compliance.reporting.export import DISCLAIMER, export_csv, export_xlsx, findings_frame
 
 from mapping_ui import column_mapping_form
@@ -95,6 +96,12 @@ def main() -> None:
             options=[False, True],
             format_func=lambda v: "YYYY-MM-DD / ISO" if not v else "DD/MM/YYYY (day first)",
         )
+        lookahead_days = st.selectbox(
+            "Credential look-ahead",
+            options=[30, 60, 90],
+            format_func=lambda n: f"{n} days",
+            help="Used only when a credentials file is uploaded.",
+        )
     with right:
         if framework_id in FRAMEWORKS:
             st.markdown(
@@ -118,6 +125,11 @@ def main() -> None:
             "Once uploaded, a missing row for a crew member and window type is treated as "
             "insufficient data — never as zero."
         ),
+    )
+    credential_file = st.file_uploader(
+        "Licenses / qualifications / medicals — CSV or XLSX (optional)",
+        type=["csv", "xlsx"],
+        help="One row per crew member per credential. Missing expiry dates are flagged as insufficient data.",
     )
 
     if uploaded is None:
@@ -170,6 +182,33 @@ def main() -> None:
         )
         st.dataframe(opening_table.head(20), use_container_width=True, hide_index=True)
 
+    credential_mapping: dict[str, str | None] | None = None
+    credential_table = None
+    if credential_file is not None:
+        try:
+            credential_table = load_table(credential_file.getvalue(), filename=credential_file.name)
+        except IngestError as exc:
+            st.error(str(exc))
+            return
+        st.caption(
+            "Credential columns. Shared crew fields reuse the roster mapping when headers match."
+        )
+        cred_prior = {field: mapping.get(field) for field in CREDENTIAL_FIELDS}
+        if not cred_prior.get("role"):
+            cred_prior["role"] = mapping.get("position")
+        if opening_mapping:
+            for field in ("crew_id", "crew_name", "role"):
+                if not cred_prior.get(field) and opening_mapping.get(field):
+                    cred_prior[field] = opening_mapping[field]
+        credential_mapping = column_mapping_form(
+            list(credential_table.columns),
+            fields=CREDENTIAL_FIELDS,
+            aliases=CREDENTIAL_ALIASES,
+            key_prefix="credential",
+            prior=cred_prior,
+        )
+        st.dataframe(credential_table.head(20), use_container_width=True, hide_index=True)
+
     if st.button("Analyze roster"):
         rows = table.to_dict(orient="records")
         try:
@@ -192,11 +231,28 @@ def main() -> None:
                 dayfirst=bool(dayfirst),
             )
             opening_issues = opening_book.validation_issues
+        credential_book = None
+        credential_issues = ()
+        if credential_table is not None and credential_mapping is not None and credential_file is not None:
+            credential_book = normalize_credentials(
+                credential_table.to_dict(orient="records"),
+                credential_mapping,
+                source_name=credential_file.name,
+                dayfirst=bool(dayfirst),
+            )
+            credential_issues = credential_book.validation_issues
         with st.spinner(f"Analyzing {len(roster.duties):,} duties..."):
-            result = run_analysis(roster, framework_id, opening_balances=opening_book)
+            result = run_analysis(
+                roster,
+                framework_id,
+                opening_balances=opening_book,
+                credentials=credential_book,
+                credential_lookahead_days=int(lookahead_days),
+            )
         st.session_state["result"] = result
         st.session_state["roster_issues"] = roster.validation_issues
         st.session_state["opening_issues"] = opening_issues
+        st.session_state["credential_issues"] = credential_issues
         st.success("Analysis complete.")
 
     result = st.session_state.get("result")
@@ -205,12 +261,16 @@ def main() -> None:
 
     issues = st.session_state.get("roster_issues") or ()
     opening_issues = st.session_state.get("opening_issues") or ()
-    if issues or opening_issues:
-        with st.expander(f"Validation messages ({len(issues) + len(opening_issues)})"):
+    credential_issues = st.session_state.get("credential_issues") or ()
+    issue_count = len(issues) + len(opening_issues) + len(credential_issues)
+    if issue_count:
+        with st.expander(f"Validation messages ({issue_count})"):
             for issue in issues:
                 st.write(f"- Roster row {issue.source_row or '—'}: {issue.message}")
             for issue in opening_issues:
                 st.write(f"- Opening-balances row {issue.source_row or '—'}: {issue.message}")
+            for issue in credential_issues:
+                st.write(f"- Credentials row {issue.source_row or '—'}: {issue.message}")
 
     section_heading("03  /  Screening", "Compliance summary")
     counts = result.counts_by_severity()
@@ -301,6 +361,7 @@ def main() -> None:
                 f"<div><div class='meta-line'>Actual</div><p class='meta-val'>{escape(str(selected.actual))} {escape(selected.units)}</p></div>"
                 f"<div><div class='meta-line'>Required · difference</div><p class='meta-val'>{escape(str(selected.required))} · {escape(str(selected.difference))}</p></div>"
                 f"<div><div class='meta-line'>Opening balance</div><p class='meta-val'>{escape(_opening_balance_label(selected.evidence))}</p></div>"
+                f"<div><div class='meta-line'>Credential</div><p class='meta-val'>{escape(_credential_label(selected.evidence))}</p></div>"
                 "</div>"
             ),
             unsafe_allow_html=True,
@@ -339,6 +400,23 @@ def _opening_balance_label(evidence: dict) -> str:
     if status == "not_applied_window_complete_in_roster":
         return f"On file ({hours} h as of {as_of}) but not added — roster already covers the window"
     return str(status)
+
+
+def _credential_label(evidence: dict) -> str:
+    cred_type = evidence.get("credential_type")
+    if not cred_type:
+        return "Not used by this check"
+    detail = evidence.get("credential_detail")
+    expiry = evidence.get("expiry_date") or "expiry missing"
+    label = f"{cred_type}" + (f" — {detail}" if detail else "")
+    if evidence.get("expiry_date") is None:
+        return f"{label} · expiry missing"
+    bits = [f"{label} · expires {expiry}"]
+    if evidence.get("scheduled_on_or_after_expiry"):
+        bits.append("scheduled on/after expiry")
+    elif evidence.get("scheduled_in_window"):
+        bits.append("scheduled in look-ahead window")
+    return " · ".join(bits)
 
 
 main()
