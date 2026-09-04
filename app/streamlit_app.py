@@ -4,20 +4,31 @@ import sys
 from html import escape
 from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parent.parent
+_APP = Path(__file__).resolve().parent
+_ROOT = _APP.parent
 _SRC = _ROOT / "src"
-if str(_SRC) not in sys.path:
-    sys.path.insert(0, str(_SRC))
+for _path in (_SRC, _APP):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
 
 import streamlit as st
 
+from crew_compliance.engine.parameters import editable_slots
+from crew_compliance.engine.registry import get_ruleset
 from crew_compliance.engine.runner import run_analysis
-from crew_compliance.frameworks import FRAMEWORKS, STUB_FRAMEWORKS, bootstrap
+from crew_compliance.frameworks import FRAMEWORKS, bootstrap
 from crew_compliance.ingestion.common import IngestError
 from crew_compliance.ingestion.loader import load_table
-from crew_compliance.ingestion.mapping import CANONICAL_FIELDS, auto_map_columns
+from crew_compliance.ingestion.mapping import ALIASES, CANONICAL_FIELDS
+from crew_compliance.ingestion.credentials import normalize_credentials
 from crew_compliance.ingestion.normalize import normalize_roster
+from crew_compliance.ingestion.opening import normalize_opening_balances
+from crew_compliance.ingestion.schemas import CREDENTIAL_ALIASES, CREDENTIAL_FIELDS, OPENING_ALIASES, OPENING_FIELDS
 from crew_compliance.reporting.export import DISCLAIMER, export_csv, export_xlsx, findings_frame
+from crew_compliance.reporting.pdf import export_pdf
+from crew_compliance.reporting.templates import credential_template_xlsx, opening_balance_template_xlsx
+
+from mapping_ui import column_mapping_form
 
 st.set_page_config(page_title="Crew Compliance Checker", layout="wide", page_icon="·")
 
@@ -53,7 +64,7 @@ def main() -> None:
         """
         <div class="island-nav">
             <span class="dot" aria-hidden="true"></span>
-            <span class="mark">Local screening · V1</span>
+            <span class="mark">Local screening · V2</span>
         </div>
         <div class="hero">
             <div class="rise d1">
@@ -73,9 +84,7 @@ def main() -> None:
     st.markdown(bezel(f"<p class='notice-copy'>{DISCLAIMER}</p>", "rise d2"), unsafe_allow_html=True)
 
     section_heading("01  /  Configuration", "Upload & framework")
-    implemented = {fid: fw.display_name for fid, fw in FRAMEWORKS.items()}
-    stub_labels = {fid: f"{label} — not in V1" for fid, label in STUB_FRAMEWORKS}
-    options = {**implemented, **stub_labels}
+    options = {fid: fw.display_name for fid, fw in FRAMEWORKS.items()}
 
     left, right = st.columns((1.15, 0.85), gap="large")
     with left:
@@ -89,6 +98,14 @@ def main() -> None:
             options=[False, True],
             format_func=lambda v: "YYYY-MM-DD / ISO" if not v else "DD/MM/YYYY (day first)",
         )
+        lookahead_days = st.selectbox(
+            "Credential look-ahead",
+            options=[30, 60, 90],
+            format_func=lambda n: f"{n} days",
+            help="Used only when a credentials file is uploaded.",
+        )
+        company_name = st.text_input("Company name (PDF branding)", placeholder="Operator name")
+        logo_file = st.file_uploader("Company logo (optional PNG or JPEG)", type=["png", "jpg", "jpeg"])
     with right:
         if framework_id in FRAMEWORKS:
             st.markdown(
@@ -98,12 +115,61 @@ def main() -> None:
         else:
             st.markdown(
                 bezel(
-                    "<p class='notice-copy'>This jurisdiction is listed for the product roadmap only and cannot be analyzed in V1.</p>"
+                    "<p class='notice-copy'>Select a framework to see its applicability and published citations.</p>"
                 ),
                 unsafe_allow_html=True,
             )
 
+    parameter_overrides: dict[str, dict[str, float]] = {}
+    if framework_id in FRAMEWORKS:
+        ruleset = get_ruleset(framework_id)
+        with st.expander("Operator rule parameters (optional overlay)"):
+            st.caption(
+                "Published cited limits are the default. Change a number only to screen against an operator "
+                "scheme that is more restrictive, or to sensitivity-test. Overlays are recorded on findings "
+                "and do not rewrite the regulation."
+            )
+            for slot in editable_slots(ruleset):
+                widget_key = f"ovr_{framework_id}_{slot['rule_id']}_{slot['key']}"
+                value = st.number_input(
+                    f"{slot['rule_id']} · {slot['key']}",
+                    min_value=0.0,
+                    value=float(slot["default"]),
+                    help=f"{slot['citation']} — {slot['rule_name']}",
+                    key=widget_key,
+                )
+                if abs(float(value) - float(slot["default"])) > 1e-9:
+                    parameter_overrides.setdefault(slot["rule_id"], {})[slot["key"]] = float(value)
+
     uploaded = st.file_uploader("Roster file — CSV or XLSX", type=["csv", "xlsx"])
+    opening_file = st.file_uploader(
+        "Opening balances — CSV or XLSX (optional)",
+        type=["csv", "xlsx"],
+        help=(
+            "Carry-over hours already accrued before this roster file. Optional at the app level. "
+            "Once uploaded, a missing row for a crew member and window type is treated as "
+            "insufficient data — never as zero."
+        ),
+    )
+    st.download_button(
+        "Download opening-balances template",
+        data=opening_balance_template_xlsx(),
+        file_name="opening_balances_template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        help="Empty workbook with suggested headers. Column mapping remains flexible if a client file differs.",
+    )
+    credential_file = st.file_uploader(
+        "Licenses / qualifications / medicals — CSV or XLSX (optional)",
+        type=["csv", "xlsx"],
+        help="One row per crew member per credential. Missing expiry dates are flagged as insufficient data.",
+    )
+    st.download_button(
+        "Download credentials template",
+        data=credential_template_xlsx(),
+        file_name="credentials_template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        help="Empty workbook with suggested headers. Column mapping remains flexible if a client file differs.",
+    )
 
     if uploaded is None:
         st.markdown(
@@ -124,17 +190,63 @@ def main() -> None:
 
     section_heading("02  /  Normalization", "Column mapping")
     st.caption("The engine never reads spreadsheet headers. Confirm the mapping, then analyze.")
-    auto = auto_map_columns(list(table.columns))
-    headers = ["— not mapped —"] + list(table.columns)
-    mapping: dict[str, str | None] = {}
-    cols = st.columns(3)
-    for i, field in enumerate(CANONICAL_FIELDS):
-        default = auto.get(field)
-        index = headers.index(default) if default in headers else 0
-        selected = cols[i % 3].selectbox(field, headers, index=index, key=f"map_{field}")
-        mapping[field] = None if selected == "— not mapped —" else selected
-
+    mapping = column_mapping_form(
+        list(table.columns),
+        fields=CANONICAL_FIELDS,
+        aliases=ALIASES,
+        key_prefix="roster",
+    )
     st.dataframe(table.head(20), use_container_width=True, hide_index=True)
+
+    opening_mapping: dict[str, str | None] | None = None
+    opening_table = None
+    if opening_file is not None:
+        try:
+            opening_table = load_table(opening_file.getvalue(), filename=opening_file.name)
+        except IngestError as exc:
+            st.error(str(exc))
+            return
+        st.caption(
+            "Opening-balance columns. Shared crew fields reuse the roster mapping when headers match."
+        )
+        prior = {field: mapping.get(field) for field in OPENING_FIELDS}
+        if not prior.get("role"):
+            prior["role"] = mapping.get("position")
+        opening_mapping = column_mapping_form(
+            list(opening_table.columns),
+            fields=OPENING_FIELDS,
+            aliases=OPENING_ALIASES,
+            key_prefix="opening",
+            prior=prior,
+        )
+        st.dataframe(opening_table.head(20), use_container_width=True, hide_index=True)
+
+    credential_mapping: dict[str, str | None] | None = None
+    credential_table = None
+    if credential_file is not None:
+        try:
+            credential_table = load_table(credential_file.getvalue(), filename=credential_file.name)
+        except IngestError as exc:
+            st.error(str(exc))
+            return
+        st.caption(
+            "Credential columns. Shared crew fields reuse the roster mapping when headers match."
+        )
+        cred_prior = {field: mapping.get(field) for field in CREDENTIAL_FIELDS}
+        if not cred_prior.get("role"):
+            cred_prior["role"] = mapping.get("position")
+        if opening_mapping:
+            for field in ("crew_id", "crew_name", "role"):
+                if not cred_prior.get(field) and opening_mapping.get(field):
+                    cred_prior[field] = opening_mapping[field]
+        credential_mapping = column_mapping_form(
+            list(credential_table.columns),
+            fields=CREDENTIAL_FIELDS,
+            aliases=CREDENTIAL_ALIASES,
+            key_prefix="credential",
+            prior=cred_prior,
+        )
+        st.dataframe(credential_table.head(20), use_container_width=True, hide_index=True)
 
     if st.button("Analyze roster"):
         rows = table.to_dict(orient="records")
@@ -148,10 +260,39 @@ def main() -> None:
             for issue in roster.validation_issues:
                 st.write(f"- Row {issue.source_row}: {issue.message}")
             return
+        opening_book = None
+        opening_issues = ()
+        if opening_table is not None and opening_mapping is not None and opening_file is not None:
+            opening_book = normalize_opening_balances(
+                opening_table.to_dict(orient="records"),
+                opening_mapping,
+                source_name=opening_file.name,
+                dayfirst=bool(dayfirst),
+            )
+            opening_issues = opening_book.validation_issues
+        credential_book = None
+        credential_issues = ()
+        if credential_table is not None and credential_mapping is not None and credential_file is not None:
+            credential_book = normalize_credentials(
+                credential_table.to_dict(orient="records"),
+                credential_mapping,
+                source_name=credential_file.name,
+                dayfirst=bool(dayfirst),
+            )
+            credential_issues = credential_book.validation_issues
         with st.spinner(f"Analyzing {len(roster.duties):,} duties..."):
-            result = run_analysis(roster, framework_id)
+            result = run_analysis(
+                roster,
+                framework_id,
+                opening_balances=opening_book,
+                credentials=credential_book,
+                credential_lookahead_days=int(lookahead_days),
+                parameter_overrides=parameter_overrides or None,
+            )
         st.session_state["result"] = result
         st.session_state["roster_issues"] = roster.validation_issues
+        st.session_state["opening_issues"] = opening_issues
+        st.session_state["credential_issues"] = credential_issues
         st.success("Analysis complete.")
 
     result = st.session_state.get("result")
@@ -159,10 +300,17 @@ def main() -> None:
         return
 
     issues = st.session_state.get("roster_issues") or ()
-    if issues:
-        with st.expander(f"Validation messages ({len(issues)})"):
+    opening_issues = st.session_state.get("opening_issues") or ()
+    credential_issues = st.session_state.get("credential_issues") or ()
+    issue_count = len(issues) + len(opening_issues) + len(credential_issues)
+    if issue_count:
+        with st.expander(f"Validation messages ({issue_count})"):
             for issue in issues:
-                st.write(f"- Row {issue.source_row or '—'}: {issue.message}")
+                st.write(f"- Roster row {issue.source_row or '—'}: {issue.message}")
+            for issue in opening_issues:
+                st.write(f"- Opening-balances row {issue.source_row or '—'}: {issue.message}")
+            for issue in credential_issues:
+                st.write(f"- Credentials row {issue.source_row or '—'}: {issue.message}")
 
     section_heading("03  /  Screening", "Compliance summary")
     counts = result.counts_by_severity()
@@ -252,6 +400,8 @@ def main() -> None:
                 f"<div><div class='meta-line'>Duty / flight</div><p class='meta-val'>{escape(selected.duty_id or '—')} · {escape(selected.flight_id or '—')}</p></div>"
                 f"<div><div class='meta-line'>Actual</div><p class='meta-val'>{escape(str(selected.actual))} {escape(selected.units)}</p></div>"
                 f"<div><div class='meta-line'>Required · difference</div><p class='meta-val'>{escape(str(selected.required))} · {escape(str(selected.difference))}</p></div>"
+                f"<div><div class='meta-line'>Opening balance</div><p class='meta-val'>{escape(_opening_balance_label(selected.evidence))}</p></div>"
+                f"<div><div class='meta-line'>Credential</div><p class='meta-val'>{escape(_credential_label(selected.evidence))}</p></div>"
                 "</div>"
             ),
             unsafe_allow_html=True,
@@ -264,7 +414,7 @@ def main() -> None:
             st.markdown(limitations, unsafe_allow_html=True)
 
     section_heading("06  /  Record", "Export the screening")
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     c1.download_button("Export CSV", data=export_csv(result), file_name="crew_compliance_report.csv", mime="text/csv")
     c2.download_button(
         "Export Excel",
@@ -272,6 +422,48 @@ def main() -> None:
         file_name="crew_compliance_report.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+    logo_bytes = logo_file.getvalue() if logo_file is not None else None
+    c3.download_button(
+        "Export PDF",
+        data=export_pdf(result, company_name=company_name, logo_bytes=logo_bytes),
+        file_name="crew_compliance_report.pdf",
+        mime="application/pdf",
+    )
+
+
+def _opening_balance_label(evidence: dict) -> str:
+    status = evidence.get("opening_balance_status")
+    if not status:
+        return "Not used by this check"
+    if status == "not_provided":
+        return "No opening-balances file uploaded"
+    if status == "missing":
+        window = evidence.get("opening_balance_window") or "this window"
+        return f"Missing for {window} — not assumed to be zero"
+    hours = evidence.get("opening_balance_hours")
+    as_of = evidence.get("opening_balance_as_of") or "unknown date"
+    if status == "applied":
+        return f"{hours} hours as of {as_of}"
+    if status == "not_applied_window_complete_in_roster":
+        return f"On file ({hours} h as of {as_of}) but not added — roster already covers the window"
+    return str(status)
+
+
+def _credential_label(evidence: dict) -> str:
+    cred_type = evidence.get("credential_type")
+    if not cred_type:
+        return "Not used by this check"
+    detail = evidence.get("credential_detail")
+    expiry = evidence.get("expiry_date") or "expiry missing"
+    label = f"{cred_type}" + (f" — {detail}" if detail else "")
+    if evidence.get("expiry_date") is None:
+        return f"{label} · expiry missing"
+    bits = [f"{label} · expires {expiry}"]
+    if evidence.get("scheduled_on_or_after_expiry"):
+        bits.append("scheduled on/after expiry")
+    elif evidence.get("scheduled_in_window"):
+        bits.append("scheduled in look-ahead window")
+    return " · ".join(bits)
 
 
 main()

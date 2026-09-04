@@ -9,10 +9,13 @@ def bootstrap() -> None:
     global _booted
     if _booted:
         return
-    from crew_compliance.frameworks import easa, faa_part_117
+    from crew_compliance.frameworks import casa, easa, faa_part_117, transport_canada, uk_caa
 
     easa.register()
     faa_part_117.register()
+    uk_caa.register()
+    transport_canada.register()
+    casa.register()
     _booted = True
 
 

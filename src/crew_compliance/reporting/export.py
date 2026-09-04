@@ -45,6 +45,12 @@ def _finding_row(finding: Finding) -> dict:
         "explanation": finding.explanation,
         "assumptions": " | ".join(finding.assumptions),
         "limitations": " | ".join(finding.limitations),
+        "opening_balance_status": finding.evidence.get("opening_balance_status", ""),
+        "opening_balance_hours": finding.evidence.get("opening_balance_hours", ""),
+        "opening_balance_as_of": finding.evidence.get("opening_balance_as_of", ""),
+        "credential_type": finding.evidence.get("credential_type", ""),
+        "credential_detail": finding.evidence.get("credential_detail", ""),
+        "expiry_date": finding.evidence.get("expiry_date", ""),
     }
 
 
@@ -102,6 +108,7 @@ def _summary_lines(result: AnalysisResult) -> list[str]:
         DISCLAIMER,
         f"Analyzed at (UTC naive local stamp): {result.analyzed_at.isoformat(timespec='seconds')}",
         f"Roster: {result.source_name}",
+        f"Date range screened: {_period_label(result)}",
         f"Framework: {result.framework_name} ({result.framework_id})",
         f"Ruleset: {result.ruleset_id} version {result.ruleset_version}",
         f"Crew reviewed: {result.crew_reviewed}",
@@ -113,4 +120,25 @@ def _summary_lines(result: AnalysisResult) -> list[str]:
             f"Critical: {counts['critical']}  High: {counts['high']}  "
             f"Medium: {counts['medium']}  Low: {counts['low']}"
         ),
+        *_override_lines(result),
     ]
+
+
+def _override_lines(result: AnalysisResult) -> list[str]:
+    if not result.parameter_overrides:
+        return ["Operator parameter overlays: none (published limits used)"]
+    lines = ["Operator parameter overlays:"]
+    for rule_id, values in result.parameter_overrides.items():
+        parts = ", ".join(f"{key}={value:g}" for key, value in values.items())
+        lines.append(f"  {rule_id}: {parts}")
+    return lines
+
+
+def period_label(result: AnalysisResult) -> str:
+    if result.period_start and result.period_end:
+        return f"{result.period_start.isoformat()} to {result.period_end.isoformat()}"
+    return "—"
+
+
+def _period_label(result: AnalysisResult) -> str:
+    return period_label(result)
