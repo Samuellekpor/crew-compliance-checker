@@ -13,8 +13,10 @@ for _path in (_SRC, _APP):
 
 import streamlit as st
 
+from crew_compliance.engine.parameters import editable_slots
+from crew_compliance.engine.registry import get_ruleset
 from crew_compliance.engine.runner import run_analysis
-from crew_compliance.frameworks import FRAMEWORKS, STUB_FRAMEWORKS, bootstrap
+from crew_compliance.frameworks import FRAMEWORKS, bootstrap
 from crew_compliance.ingestion.common import IngestError
 from crew_compliance.ingestion.loader import load_table
 from crew_compliance.ingestion.mapping import ALIASES, CANONICAL_FIELDS
@@ -82,9 +84,7 @@ def main() -> None:
     st.markdown(bezel(f"<p class='notice-copy'>{DISCLAIMER}</p>", "rise d2"), unsafe_allow_html=True)
 
     section_heading("01  /  Configuration", "Upload & framework")
-    implemented = {fid: fw.display_name for fid, fw in FRAMEWORKS.items()}
-    stub_labels = {fid: f"{label} — not in V1" for fid, label in STUB_FRAMEWORKS}
-    options = {**implemented, **stub_labels}
+    options = {fid: fw.display_name for fid, fw in FRAMEWORKS.items()}
 
     left, right = st.columns((1.15, 0.85), gap="large")
     with left:
@@ -115,10 +115,31 @@ def main() -> None:
         else:
             st.markdown(
                 bezel(
-                    "<p class='notice-copy'>This jurisdiction is listed for the product roadmap only and cannot be analyzed in V1.</p>"
+                    "<p class='notice-copy'>Select a framework to see its applicability and published citations.</p>"
                 ),
                 unsafe_allow_html=True,
             )
+
+    parameter_overrides: dict[str, dict[str, float]] = {}
+    if framework_id in FRAMEWORKS:
+        ruleset = get_ruleset(framework_id)
+        with st.expander("Operator rule parameters (optional overlay)"):
+            st.caption(
+                "Published cited limits are the default. Change a number only to screen against an operator "
+                "scheme that is more restrictive, or to sensitivity-test. Overlays are recorded on findings "
+                "and do not rewrite the regulation."
+            )
+            for slot in editable_slots(ruleset):
+                widget_key = f"ovr_{framework_id}_{slot['rule_id']}_{slot['key']}"
+                value = st.number_input(
+                    f"{slot['rule_id']} · {slot['key']}",
+                    min_value=0.0,
+                    value=float(slot["default"]),
+                    help=f"{slot['citation']} — {slot['rule_name']}",
+                    key=widget_key,
+                )
+                if abs(float(value) - float(slot["default"])) > 1e-9:
+                    parameter_overrides.setdefault(slot["rule_id"], {})[slot["key"]] = float(value)
 
     uploaded = st.file_uploader("Roster file — CSV or XLSX", type=["csv", "xlsx"])
     opening_file = st.file_uploader(
@@ -266,6 +287,7 @@ def main() -> None:
                 opening_balances=opening_book,
                 credentials=credential_book,
                 credential_lookahead_days=int(lookahead_days),
+                parameter_overrides=parameter_overrides or None,
             )
         st.session_state["result"] = result
         st.session_state["roster_issues"] = roster.validation_issues

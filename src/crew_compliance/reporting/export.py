@@ -120,7 +120,18 @@ def _summary_lines(result: AnalysisResult) -> list[str]:
             f"Critical: {counts['critical']}  High: {counts['high']}  "
             f"Medium: {counts['medium']}  Low: {counts['low']}"
         ),
+        *_override_lines(result),
     ]
+
+
+def _override_lines(result: AnalysisResult) -> list[str]:
+    if not result.parameter_overrides:
+        return ["Operator parameter overlays: none (published limits used)"]
+    lines = ["Operator parameter overlays:"]
+    for rule_id, values in result.parameter_overrides.items():
+        parts = ", ".join(f"{key}={value:g}" for key, value in values.items())
+        lines.append(f"  {rule_id}: {parts}")
+    return lines
 
 
 def period_label(result: AnalysisResult) -> str:

@@ -40,6 +40,14 @@ WINDOW_ALIASES: dict[str, str] = {
     "365": "365day",
     "365 day": "365day",
     "365 days": "365day",
+    "90day": "90day",
+    "90-day": "90day",
+    "90 day": "90day",
+    "90 days": "90day",
+    "336h": "336h",
+    "336": "336h",
+    "336 hour": "336h",
+    "336 hours": "336h",
     "other": "other",
 }
 

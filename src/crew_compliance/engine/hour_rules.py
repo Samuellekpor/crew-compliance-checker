@@ -30,6 +30,16 @@ def _flight_events(duties: Iterable[DutyPeriod]) -> list[tuple[DutyPeriod, date,
     return events
 
 
+def _duty_events(duties: Iterable[DutyPeriod]) -> list[tuple[DutyPeriod, date, datetime, float]]:
+    events = []
+    for duty in duties:
+        hours = duty.computed_duty_hours()
+        if hours is None:
+            continue
+        events.append((duty, duty.duty_date, duty.event_time(), hours))
+    return events
+
+
 def _duty_intervals(duties: Iterable[DutyPeriod]) -> list[DutyPeriod]:
     return [d for d in duties if d.duty_start and d.duty_end and d.duty_end > d.duty_start]
 
@@ -47,10 +57,10 @@ class CalendarDayHoursRule:
         return self.metadata.required_inputs or frozenset({"crew_id", "duty_date", "duty_hours"})
 
     def evaluate(self, roster: Roster, ctx: EvaluationContext) -> list[Finding]:
-        window_days = int(self.metadata.parameters["window_days"])
-        limit = float(self.metadata.parameters["limit_hours"])
-        opening_window = str(self.metadata.parameters.get("opening_window") or "")
-        opening_metric = self.metadata.parameters.get("opening_metric") or self.metric
+        window_days = int(ctx.parameters(self.metadata)["window_days"])
+        limit = float(ctx.parameters(self.metadata)["limit_hours"])
+        opening_window = str(ctx.parameters(self.metadata).get("opening_window") or "")
+        opening_metric = ctx.parameters(self.metadata).get("opening_metric") or self.metric
         findings: list[Finding] = []
         by_crew: dict[str, list[DutyPeriod]] = defaultdict(list)
         for duty in roster.duties:
@@ -187,9 +197,9 @@ class CalendarYearFlightRule:
         return frozenset({"crew_id", "duty_date", "flight_hours"})
 
     def evaluate(self, roster: Roster, ctx: EvaluationContext) -> list[Finding]:
-        limit = float(self.metadata.parameters["limit_hours"])
-        opening_window = str(self.metadata.parameters.get("opening_window") or "annual")
-        opening_metric = self.metadata.parameters.get("opening_metric") or "flight_time"
+        limit = float(ctx.parameters(self.metadata)["limit_hours"])
+        opening_window = str(ctx.parameters(self.metadata).get("opening_window") or "annual")
+        opening_metric = ctx.parameters(self.metadata).get("opening_metric") or "flight_time"
         findings: list[Finding] = []
         by_crew: dict[str, list[DutyPeriod]] = defaultdict(list)
         for duty in roster.duties:
@@ -286,10 +296,11 @@ class CalendarMonthsFlightRule:
         return frozenset({"crew_id", "duty_date", "flight_hours"})
 
     def evaluate(self, roster: Roster, ctx: EvaluationContext) -> list[Finding]:
-        limit = float(self.metadata.parameters["limit_hours"])
-        months = int(self.metadata.parameters["window_months"])
-        opening_window = str(self.metadata.parameters.get("opening_window") or "12month")
-        opening_metric = self.metadata.parameters.get("opening_metric") or "flight_time"
+        limit = float(ctx.parameters(self.metadata)["limit_hours"])
+        months = int(ctx.parameters(self.metadata)["window_months"])
+        opening_window = str(ctx.parameters(self.metadata).get("opening_window") or "12month")
+        opening_metric = ctx.parameters(self.metadata).get("opening_metric") or "flight_time"
+        metric = ctx.parameters(self.metadata).get("metric") or "flight_time"
         findings: list[Finding] = []
         by_crew: dict[str, list[DutyPeriod]] = defaultdict(list)
         for duty in roster.duties:
@@ -297,7 +308,8 @@ class CalendarMonthsFlightRule:
 
         for crew_id, duties in by_crew.items():
             name = _crew_name(roster, crew_id)
-            events = _flight_events(duties)
+            events = _duty_events(duties) if metric == "duty_hours" else _flight_events(duties)
+            unit_label = "duty" if metric == "duty_hours" else "operating flight"
             if not events:
                 findings.append(
                     build_finding(
@@ -306,7 +318,7 @@ class CalendarMonthsFlightRule:
                         crew_id=crew_id,
                         crew_name=name,
                         severity=hour_exceedance_severity(0, limit),
-                        explanation="Operating flight hours are missing, so 12-month flight time cannot be evaluated.",
+                        explanation=f"{unit_label.capitalize()} hours are missing, so the {months}-month total cannot be evaluated.",
                     )
                 )
                 continue
@@ -370,7 +382,7 @@ class CalendarMonthsFlightRule:
                             **opening_ev,
                         },
                         explanation=(
-                            f"{name} accrued {total:.1f} operating flight hours in the "
+                            f"{name} accrued {total:.1f} {unit_label} hours in the "
                             f"{months} calendar months ending {window_end.isoformat()}, "
                             f"which exceeds {limit:.0f} hours. This is a potential "
                             "compliance issue and requires review."
@@ -405,10 +417,10 @@ class RollingHoursOverlapRule:
         return frozenset({"crew_id", "duty_start", "duty_end"})
 
     def evaluate(self, roster: Roster, ctx: EvaluationContext) -> list[Finding]:
-        window_hours = float(self.metadata.parameters["window_hours"])
-        limit = float(self.metadata.parameters["limit_hours"])
-        opening_window = str(self.metadata.parameters.get("opening_window") or "")
-        opening_metric = self.metadata.parameters.get("opening_metric")
+        window_hours = float(ctx.parameters(self.metadata)["window_hours"])
+        limit = float(ctx.parameters(self.metadata)["limit_hours"])
+        opening_window = str(ctx.parameters(self.metadata).get("opening_window") or "")
+        opening_metric = ctx.parameters(self.metadata).get("opening_metric")
         findings: list[Finding] = []
         by_crew: dict[str, list[DutyPeriod]] = defaultdict(list)
         for duty in roster.duties:
@@ -482,7 +494,7 @@ class RollingHoursOverlapRule:
                             "window_end": window_end.isoformat(),
                             "window_hours": window_hours,
                             "lookback_incomplete": incomplete,
-                            "metric": self.metadata.parameters.get("metric", "duty_or_fdp_proxy"),
+                            "metric": ctx.parameters(self.metadata).get("metric", "duty_or_fdp_proxy"),
                             **opening_ev,
                         },
                         explanation=(
@@ -492,7 +504,7 @@ class RollingHoursOverlapRule:
                         ),
                         extra_limitations=(
                             ("Duty span used as an FDP proxy where true FDP was not provided.",)
-                            if self.metadata.parameters.get("metric") == "fdp_proxy"
+                            if ctx.parameters(self.metadata).get("metric") == "fdp_proxy"
                             else ()
                         ),
                     )
@@ -523,11 +535,11 @@ class RollingFlightHoursRule:
         return frozenset({"crew_id", "flight_hours"})
 
     def evaluate(self, roster: Roster, ctx: EvaluationContext) -> list[Finding]:
-        window_hours = float(self.metadata.parameters["window_hours"])
-        limit = float(self.metadata.parameters["limit_hours"])
-        window_days = int(self.metadata.parameters.get("window_days", 0))
-        opening_window = str(self.metadata.parameters.get("opening_window") or "")
-        opening_metric = self.metadata.parameters.get("opening_metric") or "flight_time"
+        window_hours = float(ctx.parameters(self.metadata)["window_hours"])
+        limit = float(ctx.parameters(self.metadata)["limit_hours"])
+        window_days = int(ctx.parameters(self.metadata).get("window_days", 0))
+        opening_window = str(ctx.parameters(self.metadata).get("opening_window") or "")
+        opening_metric = ctx.parameters(self.metadata).get("opening_metric") or "flight_time"
         findings: list[Finding] = []
         by_crew: dict[str, list[DutyPeriod]] = defaultdict(list)
         for duty in roster.duties:
