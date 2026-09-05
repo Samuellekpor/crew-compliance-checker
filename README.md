@@ -53,14 +53,14 @@ Python, Streamlit, pandas, openpyxl, reportlab, pytest.
 
 ## Currently implemented rules
 
-See `docs/RULES.md`. Do not assume FDP tables, standby, reserve, augmented crews, or operator-specific schemes are checked.
+See `docs/RULES.md`. Basic daily FDP tables are screened (no extensions, split duty, or augmented tables). Do not assume standby, reserve, or operator-specific schemes are checked.
 
 ## Known limitations
 
 - Naive operator-local times (no timezone conversion)
 - Incomplete roster lookback produces **insufficient data** notices, not a pass — unless a matching opening-balance row is supplied
 - Duty span may be used as an FDP or hours-of-work proxy when true FDP / working time is not in the file
-- Exceptions, reduced rest, commander’s discretion, and full CS-FTL.1 / Part 117 / CAO 48.1 / CAR 700.28 tables are not modeled
+- Exceptions, reduced rest, commander’s discretion, CS-FTL.1 extensions, FAA Tables A/C, CASA Table 3.1, and CAR 700.28 acclimatization adjustments are not modeled
 - One operator file cannot prove “all flying for any certificate holder” (14 CFR § 117.23(a) and similar extra-operator accumulation rules)
 
 ## Local setup

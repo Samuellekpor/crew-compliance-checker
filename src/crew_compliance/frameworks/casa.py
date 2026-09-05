@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 from crew_compliance.domain.models import RuleMetadata, Ruleset
+from crew_compliance.engine.fdp_rules import DailyFdpTableRule
 from crew_compliance.engine.hour_rules import CalendarDayHoursRule, RollingFlightHoursRule, RollingHoursOverlapRule
 from crew_compliance.engine.registry import register_ruleset
 from crew_compliance.engine.rest_rules import MinRestBeforeDutyRule
@@ -15,10 +16,11 @@ COMMON_ASSUMPTIONS = (
     "Times are interpreted as naive operator-local datetimes; time zones are not converted.",
     "This screen assumes the operator is using CAO 48.1 Appendix 2 (multi-pilot, not flight training).",
     "Off-duty immediately before the next duty is used as a proxy for the Appendix 2 clause 1 sleep-opportunity window.",
+    "Crew members are treated as acclimatised for Appendix 2 Table 2.1 unless the roster maps unknown or not-acclimatised.",
 )
 COMMON_LIMITATIONS = (
-    "Appendix 2 Tables 2.1 / 3.1 FDP by acclimatised time and sectors are not implemented.",
-    "Appendices 1 and 3–7, FRMS, split duty, late-FDP counts, and augmented operations are not modeled.",
+    "Appendix 2 Table 3.1 (unknown acclimatisation), FDP extensions, split duty, and augmentation are not modeled.",
+    "Appendices 1 and 3–7, FRMS, late-FDP counts, and augmented operations are not modeled.",
     "The 8-hour sleep opportunity inside the 10/12-hour off-duty window is not separately verified.",
     "This is a screening review, not an approved compliance-monitoring system or legal determination.",
 )
@@ -80,6 +82,16 @@ def build_ruleset() -> Ruleset:
                 "CAO 48.1 Appendix 2 cl 12.2",
                 "Cumulative duty during any consecutive 336-hour period must not exceed 100 hours.",
                 {"window_hours": 336, "limit_hours": 100, "opening_window": "336h", "opening_metric": "duty_hours"},
+            )
+        ),
+        DailyFdpTableRule(
+            _meta(
+                "CASA-48-A2-T21",
+                "Daily FDP — Appendix 2 Table 2.1",
+                "CAO 48.1 Appendix 2 Table 2.1",
+                "Maximum FDP for an acclimatised FCM from Table 2.1, by start time and sectors.",
+                {"table": "casa_a2_t21"},
+                extra_lim=("Table 3.1, extensions, split duty, and augmentation are not applied.",),
             )
         ),
         MinRestBeforeDutyRule(

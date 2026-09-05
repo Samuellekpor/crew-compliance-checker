@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 from crew_compliance.domain.models import RuleMetadata, Ruleset
+from crew_compliance.engine.fdp_rules import DailyFdpTableRule
 from crew_compliance.engine.hour_rules import RollingFlightHoursRule, RollingHoursOverlapRule
 from crew_compliance.engine.registry import register_ruleset
 from crew_compliance.engine.rest_rules import LookbackConsecutiveRestRule, MinRestBeforeDutyRule
@@ -18,8 +19,8 @@ COMMON_ASSUMPTIONS = (
     "Cumulative limits cannot include flying for other certificate holders that is absent from the file (117.23(a)).",
 )
 COMMON_LIMITATIONS = (
-    "Acclimated/theater status, Tables A/B/C, unaugmented vs augmented FDP, split duty, reserve, and 117.19 extensions are not implemented.",
-    "117.11 daily flight time, 117.13/117.17 FDP, 117.25(c)(d)(f)(g), 117.27 consecutive nights, and the 8-hour sleep opportunity inside rest are not modeled.",
+    "Tables A and C, augmented FDP, split duty, reserve, theater acclimation beyond Table B minus 30 minutes, and 117.19 extensions are not implemented.",
+    "117.11 daily flight time, 117.17 augmented FDP, 117.25(c)(d)(f)(g), 117.27 consecutive nights, and the 8-hour sleep opportunity inside rest are not modeled.",
     "This framework must not be applied to Part 135 or all-cargo Part 121 operations.",
     "This is a screening review, not an approved compliance-monitoring system or legal determination.",
 )
@@ -80,6 +81,17 @@ def build_ruleset() -> Ruleset:
                 "14 CFR § 117.23(c)(2)",
                 "No flightcrew member may accept an assignment if total FDP would exceed 190 hours in any 672 consecutive hours.",
                 {"window_hours": 672, "limit_hours": 190, "metric": "fdp_proxy", "opening_window": "672h", "opening_metric": "fdp"},
+            )
+        ),
+        DailyFdpTableRule(
+            _meta(
+                "FAA-117-13-TABLE-B",
+                "Unaugmented FDP — Table B",
+                "14 CFR § 117.13 and Table B",
+                "Maximum unaugmented FDP from Table B by report time and scheduled flight segments; "
+                "minus 30 minutes if acclimatisation is unknown or not acclimated (§ 117.13(b)).",
+                {"table": "faa_b"},
+                extra_lim=("Augmented Table C, split duty, and 117.19 extensions are not applied.",),
             )
         ),
         MinRestBeforeDutyRule(

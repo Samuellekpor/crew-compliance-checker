@@ -82,6 +82,9 @@ class DutyPeriod:
     flight_end: datetime | None
     flight_hours: float | None
     source_row: int
+    sector_count: int | None = None
+    fdp_hours: float | None = None
+    acclimatisation: str | None = None
 
     def operating_flight_hours(self) -> float | None:
         if self.is_positioning:

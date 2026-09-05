@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 from crew_compliance.domain.models import RuleMetadata, Ruleset
+from crew_compliance.engine.fdp_rules import DailyFdpTableRule
 from crew_compliance.engine.hour_rules import (
     CalendarDayHoursRule,
     CalendarMonthsFlightRule,
@@ -20,9 +21,10 @@ COMMON_ASSUMPTIONS = (
     "Consecutive-day limits use calendar dates, not exact 24-hour multiples.",
     "Positioning counts as duty and does not count as operating flight time (ORO.FTL.215(b)).",
     "Where only a duty date and block hours exist, those hours are treated as operating flight time on that date.",
+    "Crew members are treated as acclimatised for ORO.FTL.205 Table 2 unless the roster maps an unknown/not-acclimatised value.",
 )
 COMMON_LIMITATIONS = (
-    "Daily FDP tables (ORO.FTL.205 / CS-FTL.1) are not implemented.",
+    "ORO.FTL.205 extensions, in-flight rest, split duty, WOCL reductions beyond the table, and CS-FTL.1 night-duty FRM are not modeled.",
     "Standby, reserve, split duty, reduced rest, commander's discretion, and operator-specific FTSS are not modeled.",
     "This is a screening review, not an approved compliance-monitoring system or legal determination.",
 )
@@ -108,6 +110,18 @@ def build_ruleset() -> Ruleset:
                 {"window_days": 28, "limit_hours": 190, "opening_window": "28day", "opening_metric": "duty_hours"},
             ),
             metric="duty_hours",
+        ),
+        DailyFdpTableRule(
+            _meta(
+                "EASA-FTL-205-TABLE",
+                "Daily FDP — acclimatised / unknown table",
+                "ORO.FTL.205(b)(1)–(2)",
+                "Maximum basic daily FDP from Table 2 (acclimatised) or Table 3 (unknown), by start time and sectors.",
+                {"table": "easa_t2"},
+                extra_lim=(
+                    "Commander's discretion, planned extensions (CS-FTL.1), split duty, and in-flight rest are not applied.",
+                ),
+            )
         ),
         MinRestBeforeDutyRule(
             _meta(

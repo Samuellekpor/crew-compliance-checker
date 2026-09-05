@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 from crew_compliance.domain.models import RuleMetadata, Ruleset
+from crew_compliance.engine.fdp_rules import DailyFdpTableRule
 from crew_compliance.engine.hour_rules import (
     CalendarDayHoursRule,
     CalendarMonthsFlightRule,
@@ -23,7 +24,7 @@ COMMON_ASSUMPTIONS = (
     "CAWTR working time uses roster duty hours as a proxy; standby counting in reg. 9A is not applied.",
 )
 COMMON_LIMITATIONS = (
-    "Daily FDP tables and CS-FTL.1 are not implemented.",
+    "ORO.FTL.205 planned extensions, CS-FTL.1, split duty, and in-flight rest are not modeled.",
     "Standby, reserve, split duty, reduced rest, commander's discretion, and operator FTSS are not modeled.",
     "This is a screening review, not an approved compliance-monitoring system or legal determination.",
 )
@@ -108,6 +109,18 @@ def build_ruleset() -> Ruleset:
                 {"window_days": 28, "limit_hours": 190, "opening_window": "28day", "opening_metric": "duty_hours"},
             ),
             metric="duty_hours",
+        ),
+        DailyFdpTableRule(
+            _meta(
+                "UK-CAA-FTL-205-TABLE",
+                "Daily FDP — acclimatised / unknown table",
+                "UK CAA ORO.FTL.205(b)(1)–(2) (retained EU)",
+                "Maximum basic daily FDP from Table 2 (acclimatised) or Table 3 (unknown), by start time and sectors.",
+                {"table": "easa_t2"},
+                extra_lim=(
+                    "Commander's discretion, planned extensions, split duty, and in-flight rest are not applied.",
+                ),
+            )
         ),
         MinRestBeforeDutyRule(
             _meta(

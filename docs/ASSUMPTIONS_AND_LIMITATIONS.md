@@ -12,7 +12,7 @@
 ## Limitations
 
 - Incomplete lookback is never treated as a pass.
-- Time zone changes, acclimatisation, and WOCL are not modeled.
-- Full EASA FTSS, full Part 117 tables, CAR 700.28 FDP tables, and CAO 48.1 Appendix 2 FDP tables are out of scope.
+- Time zone changes and WOCL reductions beyond the published daily FDP table cells are not modeled. Crew are treated as acclimatised unless the roster maps another state.
+- Daily FDP screening uses the cited basic tables only. Extensions, split duty, in-flight rest, FAA Tables A/C, CASA Table 3.1, and CS-FTL.1 are out of scope.
 - Flying for other certificate holders is not in a typical single-operator file (relevant to § 117.23(a)).
 - The product is a screening review, not a legal determination.

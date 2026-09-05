@@ -92,3 +92,26 @@ def apply_overnight_wrap(start: datetime, end: datetime) -> datetime:
     if end.date() == start.date() and end.time() <= start.time():
         return end + timedelta(days=1)
     return end
+
+
+def parse_sectors(value: Any) -> int | None:
+    hours = parse_hours(value)
+    if hours is None:
+        return None
+    count = int(round(hours))
+    return count if count >= 1 else None
+
+
+def parse_acclimatisation(value: Any) -> str | None:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    text = str(value).strip().lower().replace("_", " ").replace("-", " ")
+    if text in {"", "nan", "none"}:
+        return None
+    if text in {"unknown", "unk", "not known"}:
+        return "unknown"
+    if text in {"not acclimated", "not acclimatised", "unacclimated", "unacclimatised", "no"}:
+        return "not_acclimated"
+    if text in {"acclimated", "acclimatised", "yes", "true", "1"}:
+        return "acclimatised"
+    return None

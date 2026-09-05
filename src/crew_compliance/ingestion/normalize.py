@@ -122,6 +122,9 @@ def normalize_roster(
                 flight_end=kwargs["flight_end"],
                 flight_hours=kwargs["flight_hours"],
                 source_row=index,
+                sector_count=kwargs.get("sector_count"),
+                fdp_hours=kwargs.get("fdp_hours"),
+                acclimatisation=kwargs.get("acclimatisation"),
             )
             duties.append(duty)
             crew_map[crew_id] = CrewMember(

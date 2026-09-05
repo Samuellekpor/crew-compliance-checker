@@ -1,7 +1,14 @@
 from __future__ import annotations
 
 from crew_compliance.domain.enums import DutyKind, Position
-from crew_compliance.ingestion.parse import parse_bool, parse_date, parse_datetime, parse_hours
+from crew_compliance.ingestion.parse import (
+    parse_acclimatisation,
+    parse_bool,
+    parse_date,
+    parse_datetime,
+    parse_hours,
+    parse_sectors,
+)
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_ROWS = 50_000
@@ -76,6 +83,9 @@ def build_duty_kwargs(row: dict, mapping: dict[str, str | None], dayfirst: bool)
         "start_location": _str(mapped_value(row, mapping, "start_location")),
         "end_location": _str(mapped_value(row, mapping, "end_location")),
         "position": classify_position(_str(mapped_value(row, mapping, "position"))),
+        "sector_count": parse_sectors(mapped_value(row, mapping, "sectors")),
+        "fdp_hours": parse_hours(mapped_value(row, mapping, "fdp_hours")),
+        "acclimatisation": parse_acclimatisation(mapped_value(row, mapping, "acclimatisation")),
     }
 
 

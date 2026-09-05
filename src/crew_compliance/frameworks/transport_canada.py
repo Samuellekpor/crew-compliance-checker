@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 from crew_compliance.domain.models import RuleMetadata, Ruleset
+from crew_compliance.engine.fdp_rules import DailyFdpTableRule
 from crew_compliance.engine.hour_rules import CalendarDayHoursRule
 from crew_compliance.engine.registry import register_ruleset
 from crew_compliance.engine.rest_rules import MinRestBeforeDutyRule
@@ -15,9 +16,10 @@ COMMON_ASSUMPTIONS = (
     "Times are interpreted as naive operator-local datetimes; time zones are not converted.",
     "Hours of work are taken from roster duty start–end. Reserve 33% and standby 100% counting in 700.29(3) are not applied.",
     "The 7-day hours-of-work screen uses the 60-hour limit in 700.29(1)(c), not the 70-hour 700.29(1)(d) option.",
+    "Crew members are treated as acclimatized for 700.28 unless the roster maps unknown or not-acclimated.",
 )
 COMMON_LIMITATIONS = (
-    "Maximum FDP tables in 700.28, acclimatization, split duty, reserve, and FRMS exemptions are not implemented.",
+    "Acclimatization reductions to 700.28, split duty, reserve, and FRMS exemptions are not implemented.",
     "Single-pilot 8 h / 24 h in 700.27(1)(d) is not evaluated.",
     "Rest travel time (11 h plus travel) and 10 h in suitable accommodation at home base are not distinguished; "
     "the screen uses 12 h at home base and 10 h away.",
@@ -107,6 +109,20 @@ def build_ruleset() -> Ruleset:
                 {"window_days": 365, "limit_hours": 2200, "opening_window": "365day", "opening_metric": "duty_hours"},
             ),
             metric="duty_hours",
+        ),
+        DailyFdpTableRule(
+            _meta(
+                "TC-700-28-TABLE",
+                "Maximum FDP — CAR 700.28",
+                "CAR 700.28(2)–(4)",
+                "Maximum FDP from the 700.28 tables by start time, number of flights, and average scheduled flight duration. "
+                "Positioning is not counted as a flight (700.28(6)).",
+                {"table": "tc_700_28"},
+                extra_lim=(
+                    "If average flight duration cannot be computed, the table is not selected.",
+                    "700.28(5) additional limits and acclimatization adjustments are not applied.",
+                ),
+            )
         ),
         MinRestBeforeDutyRule(
             _meta(

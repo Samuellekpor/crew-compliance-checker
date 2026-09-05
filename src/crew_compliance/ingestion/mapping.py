@@ -18,6 +18,9 @@ CANONICAL_FIELDS = (
     "end_location",
     "captain",
     "first_officer",
+    "sectors",
+    "fdp_hours",
+    "acclimatisation",
 )
 
 ALIASES: dict[str, tuple[str, ...]] = {
@@ -38,6 +41,9 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "end_location": ("end_location", "to", "destination", "arr station"),
     "captain": ("captain", "pic", "pilot in command", "cmd", "commander"),
     "first_officer": ("first officer", "firstofficer", "fo", "f/o", "sic"),
+    "sectors": ("sectors", "sector count", "legs", "segments", "flight segments"),
+    "fdp_hours": ("fdp_hours", "fdp", "fdp hours", "flight duty period", "scheduled fdp"),
+    "acclimatisation": ("acclimatisation", "acclimatization", "acclimated", "acclimatised"),
 }
 
 
