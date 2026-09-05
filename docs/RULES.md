@@ -86,3 +86,7 @@ Applicability: CAO 48.1 Instrument 2019 **Appendix 2** (multi-pilot operations e
 
 **Not implemented:** Appendix 2 Table 3.1, other appendices, FRMS, split duty, late-FDP counts, 8-hour sleep opportunity inside the off-duty window.
 
+## Duty assignment check
+
+`check_duty_assignment` appends one proposed duty to the current roster and re-runs the same ruleset. It returns findings for that crew member that are **new** or **worsened** (higher kind, or a larger actual on the same finding id). It does not use a separate legality model.
+

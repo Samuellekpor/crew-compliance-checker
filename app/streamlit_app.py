@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import date, time as clock_time
 from html import escape
 from pathlib import Path
 
@@ -13,6 +14,8 @@ for _path in (_SRC, _APP):
 
 import streamlit as st
 
+from crew_compliance.domain.enums import FindingKind
+from crew_compliance.engine.assignment import build_proposed_duty, check_duty_assignment
 from crew_compliance.engine.parameters import editable_slots
 from crew_compliance.engine.registry import get_ruleset
 from crew_compliance.engine.runner import run_analysis
@@ -290,6 +293,14 @@ def main() -> None:
                 parameter_overrides=parameter_overrides or None,
             )
         st.session_state["result"] = result
+        st.session_state["roster"] = roster
+        st.session_state["analysis_framework_id"] = framework_id
+        st.session_state["analysis_kwargs"] = {
+            "opening_balances": opening_book,
+            "credentials": credential_book,
+            "credential_lookahead_days": int(lookahead_days),
+            "parameter_overrides": parameter_overrides or None,
+        }
         st.session_state["roster_issues"] = roster.validation_issues
         st.session_state["opening_issues"] = opening_issues
         st.session_state["credential_issues"] = credential_issues
@@ -350,6 +361,62 @@ def main() -> None:
         """,
         unsafe_allow_html=True,
     )
+
+    roster = st.session_state.get("roster")
+    if roster is not None and roster.crew:
+        section_heading("03b  /  Assignment", "Duty assignment check")
+        with st.expander("Screen a proposed duty against this roster"):
+            st.caption(
+                "Uses the same ruleset as the last Analyze run. Results are new or worsened findings "
+                "for the selected crew only — not a legal determination."
+            )
+            crew_options = {member.crew_id: member for member in roster.crew}
+            crew_id = st.selectbox(
+                "Crew member",
+                options=list(crew_options.keys()),
+                format_func=lambda cid: f"{crew_options[cid].name} ({cid})",
+                key="assign_crew",
+            )
+            member = crew_options[crew_id]
+            date_col, start_col, end_col = st.columns(3)
+            default_day = roster.duties[-1].duty_date if roster.duties else date.today()
+            duty_date = date_col.date_input("Duty date", value=default_day, key="assign_date")
+            start = start_col.time_input("Duty start", value=clock_time(6, 0), key="assign_start")
+            end = end_col.time_input("Duty end", value=clock_time(19, 0), key="assign_end")
+            sector_col, hours_col = st.columns(2)
+            sectors = sector_col.number_input("Sectors (0 = infer)", min_value=0, value=0, step=1, key="assign_sectors")
+            flight_hours = hours_col.number_input("Flight hours", min_value=0.0, value=8.0, step=0.1, key="assign_fh")
+            if st.button("Screen proposed duty"):
+                proposed = build_proposed_duty(
+                    crew_id=member.crew_id,
+                    crew_name=member.name,
+                    duty_date=duty_date,
+                    start=start.strftime("%H:%M"),
+                    end=end.strftime("%H:%M"),
+                    flight_hours=float(flight_hours),
+                    sector_count=int(sectors) if int(sectors) >= 1 else None,
+                    home_base=member.home_base,
+                    start_location=member.home_base,
+                    position=member.position,
+                )
+                st.session_state["assignment_check"] = check_duty_assignment(
+                    roster,
+                    proposed,
+                    st.session_state["analysis_framework_id"],
+                    **(st.session_state.get("analysis_kwargs") or {}),
+                )
+            check = st.session_state.get("assignment_check")
+            if check is not None:
+                if not check.new_or_worsened:
+                    st.success("No new or worsened findings for this crew.")
+                else:
+                    issues = sum(1 for item in check.new_or_worsened if item.kind == FindingKind.POTENTIAL_ISSUE)
+                    if issues:
+                        st.warning(f"{issues} new or worsened potential issue(s) for this assignment.")
+                    else:
+                        st.info("New insufficient-data or informational notices only — no new potential issues.")
+                    for item in check.new_or_worsened:
+                        st.write(f"- **{item.kind.value}** · {item.rule_id} · {item.explanation}")
 
     section_heading("04  /  Review", "Findings")
     frame = findings_frame(result)

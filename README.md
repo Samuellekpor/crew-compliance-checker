@@ -22,6 +22,7 @@ Crew planners need a fast way to see whether a spreadsheet roster *might* confli
 - Operator overlay of published numeric limits for this run only (defaults remain the cited values; overlays are recorded in evidence and exports)
 - Structured findings with citations, evidence, assumptions, and limitations
 - Filters and finding detail
+- Duty assignment check: screen one proposed duty against the loaded roster with the same engine
 - CSV, Excel, and branded PDF report export
 
 Pricing ($29/month or $290/year) is a product requirement only. Payment processing is not implemented (see V3).
