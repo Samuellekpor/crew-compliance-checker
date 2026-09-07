@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 from datetime import date, time as clock_time
 from html import escape
 from pathlib import Path
@@ -28,6 +29,7 @@ from crew_compliance.ingestion.normalize import normalize_roster
 from crew_compliance.ingestion.opening import normalize_opening_balances
 from crew_compliance.ingestion.schemas import CREDENTIAL_ALIASES, CREDENTIAL_FIELDS, OPENING_ALIASES, OPENING_FIELDS
 from crew_compliance.reporting.export import DISCLAIMER, export_csv, export_xlsx, findings_frame
+from crew_compliance.reporting.gantt import build_gantt_view, render_gantt_html
 from crew_compliance.reporting.pdf import export_pdf
 from crew_compliance.reporting.templates import credential_template_xlsx, opening_balance_template_xlsx
 
@@ -417,6 +419,29 @@ def main() -> None:
                         st.info("New insufficient-data or informational notices only — no new potential issues.")
                     for item in check.new_or_worsened:
                         st.write(f"- **{item.kind.value}** · {item.rule_id} · {item.explanation}")
+
+    if roster is not None and roster.duties:
+        section_heading("03c  /  Roster", "Calendar view")
+        st.caption(
+            "Each bar is a duty from report to release. Finding pins sit on that duty at the event time — "
+            "not on a separate date list. Open a pin for the citation. This is still a screening view, not a scheduler."
+        )
+        crew_ids = [member.crew_id for member in roster.crew]
+        selected_crew = st.multiselect(
+            "Crew lanes",
+            options=crew_ids,
+            format_func=lambda cid: next((m.name for m in roster.crew if m.crew_id == cid), cid),
+            key="gantt_crew",
+        )
+        visible_crew = [m for m in roster.crew if not selected_crew or m.crew_id in selected_crew]
+        visible_ids = {m.crew_id for m in visible_crew} or {d.crew_id for d in roster.duties}
+        visible_duties = [d for d in roster.duties if d.crew_id in visible_ids]
+        sliced = replace(roster, crew=tuple(visible_crew), duties=tuple(visible_duties))
+        visible_findings = tuple(f for f in result.findings if f.crew_id in visible_ids)
+        st.markdown(
+            bezel(render_gantt_html(build_gantt_view(sliced, visible_findings)), "gantt-shell rise"),
+            unsafe_allow_html=True,
+        )
 
     section_heading("04  /  Review", "Findings")
     frame = findings_frame(result)
