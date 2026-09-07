@@ -5,7 +5,7 @@ from datetime import date, datetime, time
 
 from crew_compliance.domain.enums import FindingKind, Severity
 from crew_compliance.domain.models import Finding
-from crew_compliance.reporting.gantt import build_gantt_view
+from crew_compliance.reporting.gantt import build_gantt_view, render_gantt_html
 from tests.helpers import make_duty, make_roster
 
 
@@ -81,6 +81,24 @@ def test_unmatched_crew_finding_stays_unattached():
     assert extra
     assert extra[0].unattached[0].finding_id == "loose"
     assert not extra[0].bars
+
+
+def test_html_pins_finding_on_the_duty_bar():
+    duty = make_duty(start="06:00", end="16:00", flight_id="BA050")
+    roster = make_roster([duty])
+    view = build_gantt_view(roster, [_finding(duty_id=duty.duty_id, finding_id="pin-1")])
+    html = render_gantt_html(view)
+    assert "Crew One" in html
+    assert "BA050" in html
+    assert 'data-finding-id="pin-1"' in html
+    assert "gantt-pin" in html
+
+
+def test_html_escapes_crew_names():
+    duty = make_duty(name='<script>x</script>')
+    html = render_gantt_html(build_gantt_view(make_roster([duty])))
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
 
 
 def test_overnight_bar_keeps_actual_start_and_end():

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from html import escape
 
 from crew_compliance.domain.models import AnalysisResult, DutyPeriod, Finding, Roster
 
@@ -193,3 +194,76 @@ def _target_duty(
         if after:
             return min(after, key=lambda d: d.event_time())
     return rows[0] if len(rows) == 1 else None
+
+
+def render_gantt_html(view: GanttView) -> str:
+    span = (view.range_end - view.range_start).total_seconds()
+    if span <= 0:
+        span = 86400.0
+    days = max(int(round(span / 86400.0)), 1)
+    ticks = []
+    cursor = view.range_start
+    while cursor < view.range_end:
+        ticks.append(
+            f'<span class="gantt-tick">{escape(cursor.strftime("%d %b"))}</span>'
+        )
+        cursor += timedelta(days=1)
+    lanes_html = "".join(_lane_html(lane, view.range_start, span) for lane in view.lanes)
+    return (
+        f'<div class="gantt" style="--gantt-days:{days}">'
+        '<div class="gantt-axis">'
+        '<span class="gantt-axis-spacer"></span>'
+        f'<div class="gantt-ticks">{"".join(ticks)}</div>'
+        "</div>"
+        f'<div class="gantt-body">{lanes_html}</div>'
+        "</div>"
+    )
+
+
+def _lane_html(lane: GanttLane, range_start: datetime, span: float) -> str:
+    bars = "".join(_bar_html(bar, range_start, span) for bar in lane.bars)
+    unattached = ""
+    if lane.unattached:
+        chips = "".join(
+            f'<span class="gantt-loose gantt-pin--{escape(pin.severity)}">{escape(pin.rule_id)}</span>'
+            for pin in lane.unattached
+        )
+        unattached = f'<div class="gantt-unattached">{chips}</div>'
+    return (
+        '<div class="gantt-lane">'
+        f'<div class="gantt-crew"><span>{escape(lane.crew_name)}</span>'
+        f'<em>{escape(lane.crew_id)}</em>{unattached}</div>'
+        f'<div class="gantt-track">{bars}</div>'
+        "</div>"
+    )
+
+
+def _bar_html(bar: GanttBar, range_start: datetime, span: float) -> str:
+    left = max(0.0, (bar.start - range_start).total_seconds() / span * 100.0)
+    width = max(0.35, (bar.end - bar.start).total_seconds() / span * 100.0)
+    kind = "positioning" if bar.is_positioning else "operating"
+    if bar.date_only:
+        kind += " date-only"
+    pins = "".join(_pin_html(pin) for pin in bar.pins)
+    title = f"{bar.label} · {bar.start.strftime('%H:%M')}–{bar.end.strftime('%H:%M')}"
+    return (
+        f'<div class="gantt-bar gantt-bar--{kind}" style="left:{left:.4f}%;width:{width:.4f}%" '
+        f'title="{escape(title, quote=True)}">'
+        f'<span class="gantt-bar-label">{escape(bar.label)}</span>'
+        f"{pins}</div>"
+    )
+
+
+def _pin_html(pin: GanttPin) -> str:
+    left = pin.offset_ratio * 100.0
+    return (
+        f'<details class="gantt-pin gantt-pin--{escape(pin.severity)} gantt-pin--{escape(pin.kind)}" '
+        f'style="left:{left:.4f}%" data-finding-id="{escape(pin.finding_id, quote=True)}">'
+        f'<summary aria-label="{escape(pin.rule_id, quote=True)}"></summary>'
+        '<div class="gantt-pin-card">'
+        f'<span class="gantt-pin-rule">{escape(pin.rule_id)}</span>'
+        f'<p>{escape(pin.explanation)}</p>'
+        f'<small>{escape(pin.citation)} · {escape(pin.severity)}</small>'
+        "</div></details>"
+    )
+
