@@ -420,7 +420,7 @@ div[data-baseweb="select"] > div,
 }
 
 .gantt {
-  --gantt-day: 3.35rem;
+  --gantt-day: 12.5rem;
   overflow-x: auto;
   padding: 0.35rem 0.15rem 1.25rem;
 }
@@ -550,6 +550,7 @@ div[data-baseweb="select"] > div,
 }
 
 .gantt-pin-card {
+  display: none;
   position: absolute;
   top: 1.15rem;
   left: 50%;
@@ -561,6 +562,10 @@ div[data-baseweb="select"] > div,
   box-shadow: 0 0 0 1px var(--hairline), 0 18px 36px rgba(28, 20, 16, 0.12);
   color: var(--ink);
   z-index: 5;
+}
+
+.gantt-pin[open] .gantt-pin-card {
+  display: block;
 }
 
 .gantt-pin-rule {

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from dataclasses import replace
-from datetime import date, time as clock_time
+from datetime import date, timedelta, time as clock_time
 from html import escape
 from pathlib import Path
 
@@ -433,13 +433,26 @@ def main() -> None:
             format_func=lambda cid: next((m.name for m in roster.crew if m.crew_id == cid), cid),
             key="gantt_crew",
         )
+        duty_dates = [d.duty_date for d in roster.duties]
+        min_day, max_day = min(duty_dates), max(duty_dates)
+        default_from = max(min_day, max_day - timedelta(days=13))
+        from_col, to_col = st.columns(2)
+        win_start = from_col.date_input("From", value=default_from, min_value=min_day, max_value=max_day, key="gantt_from")
+        win_end = to_col.date_input("To", value=max_day, min_value=min_day, max_value=max_day, key="gantt_to")
+        if win_end < win_start:
+            win_start, win_end = win_end, win_start
         visible_crew = [m for m in roster.crew if not selected_crew or m.crew_id in selected_crew]
         visible_ids = {m.crew_id for m in visible_crew} or {d.crew_id for d in roster.duties}
         visible_duties = [d for d in roster.duties if d.crew_id in visible_ids]
         sliced = replace(roster, crew=tuple(visible_crew), duties=tuple(visible_duties))
         visible_findings = tuple(f for f in result.findings if f.crew_id in visible_ids)
         st.markdown(
-            bezel(render_gantt_html(build_gantt_view(sliced, visible_findings)), "gantt-shell rise"),
+            bezel(
+                render_gantt_html(
+                    build_gantt_view(sliced, visible_findings, window_start=win_start, window_end=win_end)
+                ),
+                "gantt-shell rise",
+            ),
             unsafe_allow_html=True,
         )
 

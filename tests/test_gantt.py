@@ -101,6 +101,19 @@ def test_html_escapes_crew_names():
     assert "&lt;script&gt;" in html
 
 
+def test_window_clips_duties_outside_the_selected_days():
+    early = make_duty(day=date(2026, 6, 1), flight_id="EARLY")
+    late = make_duty(day=date(2026, 6, 20), flight_id="LATE", source_row=3)
+    view = build_gantt_view(
+        make_roster([early, late]),
+        window_start=date(2026, 6, 18),
+        window_end=date(2026, 6, 21),
+    )
+    labels = [bar.label for lane in view.lanes for bar in lane.bars]
+    assert labels == ["LATE"]
+    assert view.range_start.date() == date(2026, 6, 18)
+
+
 def test_overnight_bar_keeps_actual_start_and_end():
     duty = make_duty(start="22:00", end="06:00")
     view = build_gantt_view(make_roster([duty]))

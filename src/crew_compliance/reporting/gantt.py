@@ -48,7 +48,12 @@ class GanttView:
     lanes: tuple[GanttLane, ...]
 
 
-def build_gantt_view(roster: Roster, findings: tuple[Finding, ...] | list[Finding] = ()) -> GanttView:
+def build_gantt_view(
+    roster: Roster,
+    findings: tuple[Finding, ...] | list[Finding] = (),
+    window_start: date | None = None,
+    window_end: date | None = None,
+) -> GanttView:
     duties_by_id = {duty.duty_id: duty for duty in roster.duties}
     duties_by_crew: dict[str, list[DutyPeriod]] = defaultdict(list)
     for duty in roster.duties:
@@ -105,13 +110,41 @@ def build_gantt_view(roster: Roster, findings: tuple[Finding, ...] | list[Findin
     range_start = min(starts).replace(hour=0, minute=0, second=0, microsecond=0)
     last = max(ends)
     range_end = datetime.combine(last.date() + timedelta(days=1), datetime.min.time())
+    if window_start:
+        range_start = datetime.combine(window_start, datetime.min.time())
+    if window_end:
+        range_end = datetime.combine(window_end + timedelta(days=1), datetime.min.time())
     if range_end <= range_start:
         range_end = range_start + timedelta(days=1)
-    return GanttView(range_start, range_end, tuple(lanes))
+    clipped = tuple(_clip_lane(lane, range_start, range_end) for lane in lanes)
+    return GanttView(range_start, range_end, clipped)
 
 
 def build_gantt_view_from_result(roster: Roster, result: AnalysisResult) -> GanttView:
     return build_gantt_view(roster, result.findings)
+
+
+def _clip_lane(lane: GanttLane, range_start: datetime, range_end: datetime) -> GanttLane:
+    bars = []
+    for bar in lane.bars:
+        start = max(bar.start, range_start)
+        end = min(bar.end, range_end)
+        if end <= start:
+            continue
+        bars.append(
+            GanttBar(
+                duty_id=bar.duty_id,
+                crew_id=bar.crew_id,
+                crew_name=bar.crew_name,
+                start=start,
+                end=end,
+                label=bar.label,
+                is_positioning=bar.is_positioning,
+                date_only=bar.date_only,
+                pins=bar.pins,
+            )
+        )
+    return GanttLane(lane.crew_id, lane.crew_name, tuple(bars), lane.unattached)
 
 
 def _bar(duty: DutyPeriod, pins: list[GanttPin]) -> GanttBar:
