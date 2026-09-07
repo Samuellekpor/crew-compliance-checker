@@ -90,3 +90,7 @@ Applicability: CAO 48.1 Instrument 2019 **Appendix 2** (multi-pilot operations e
 
 `check_duty_assignment` appends one proposed duty to the current roster and re-runs the same ruleset. It returns findings for that crew member that are **new** or **worsened** (higher kind, or a larger actual on the same finding id). It does not use a separate legality model.
 
+## Roster calendar
+
+After a run, the app can draw crew lanes and duty bars (report to release). Findings are pinned on the matching duty at the finding’s event time when a `duty_id` or covering interval exists. This is a review surface, not a pairing editor.
+
