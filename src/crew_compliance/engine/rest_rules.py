@@ -33,10 +33,9 @@ class MinRestBeforeDutyRule:
         return frozenset({"crew_id", "duty_start", "duty_end"})
 
     def evaluate(self, roster: Roster, ctx: EvaluationContext) -> list[Finding]:
-        del ctx
-        home_floor = float(self.metadata.parameters.get("home_base_floor_hours", 0))
-        away_floor = float(self.metadata.parameters.get("away_floor_hours", 0))
-        fixed_floor = self.metadata.parameters.get("fixed_floor_hours")
+        home_floor = float(ctx.parameters(self.metadata).get("home_base_floor_hours", 0))
+        away_floor = float(ctx.parameters(self.metadata).get("away_floor_hours", 0))
+        fixed_floor = ctx.parameters(self.metadata).get("fixed_floor_hours")
         findings: list[Finding] = []
         by_crew: dict[str, list[DutyPeriod]] = defaultdict(list)
         for duty in roster.duties:
@@ -77,7 +76,7 @@ class MinRestBeforeDutyRule:
                 assert previous.duty_end and current.duty_start
                 rest_hours = (current.duty_start - previous.duty_end).total_seconds() / 3600.0
                 preceding = previous.computed_duty_hours() or 0.0
-                use_preceding = bool(self.metadata.parameters.get("use_preceding", True))
+                use_preceding = bool(ctx.parameters(self.metadata).get("use_preceding", True))
                 if fixed_floor is not None:
                     required = (
                         max(preceding, float(fixed_floor)) if use_preceding else float(fixed_floor)
@@ -177,9 +176,8 @@ class LookbackConsecutiveRestRule:
         return frozenset({"crew_id", "duty_start", "duty_end"})
 
     def evaluate(self, roster: Roster, ctx: EvaluationContext) -> list[Finding]:
-        del ctx
-        lookback_hours = float(self.metadata.parameters["lookback_hours"])
-        required_rest = float(self.metadata.parameters["required_consecutive_rest_hours"])
+        lookback_hours = float(ctx.parameters(self.metadata)["lookback_hours"])
+        required_rest = float(ctx.parameters(self.metadata)["required_consecutive_rest_hours"])
         findings: list[Finding] = []
         by_crew: dict[str, list[DutyPeriod]] = defaultdict(list)
         for duty in roster.duties:
@@ -264,9 +262,8 @@ class RecurrentExtendedRestScreenRule:
         return frozenset({"crew_id", "duty_start", "duty_end"})
 
     def evaluate(self, roster: Roster, ctx: EvaluationContext) -> list[Finding]:
-        del ctx
-        rest_hours = float(self.metadata.parameters["rest_hours"])
-        max_gap_hours = float(self.metadata.parameters["max_gap_hours"])
+        rest_hours = float(ctx.parameters(self.metadata)["rest_hours"])
+        max_gap_hours = float(ctx.parameters(self.metadata)["max_gap_hours"])
         findings: list[Finding] = []
         by_crew: dict[str, list[DutyPeriod]] = defaultdict(list)
         for duty in roster.duties:

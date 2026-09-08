@@ -18,6 +18,9 @@ def make_duty(
     home_base: str | None = "LHR",
     start_location: str | None = "LHR",
     positioning: bool = False,
+    sector_count: int | None = None,
+    fdp_hours: float | None = None,
+    acclimatisation: str | None = None,
 ) -> DutyPeriod:
     sh, sm = map(int, start.split(":"))
     eh, em = map(int, end.split(":"))
@@ -45,6 +48,9 @@ def make_duty(
         flight_end=duty_end,
         flight_hours=flight_hours,
         source_row=source_row,
+        sector_count=sector_count,
+        fdp_hours=fdp_hours,
+        acclimatisation=acclimatisation,
     )
 
 
