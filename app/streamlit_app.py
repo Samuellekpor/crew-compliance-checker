@@ -33,6 +33,8 @@ from crew_compliance.reporting.gantt import build_gantt_view, render_gantt_html
 from crew_compliance.reporting.pdf import export_pdf
 from crew_compliance.reporting.templates import credential_template_xlsx, opening_balance_template_xlsx
 
+from crew_compliance.integrations.mailchimp import SubscribeResult, subscribe
+
 from mapping_ui import column_mapping_form
 
 st.set_page_config(page_title="Crew Compliance Checker", layout="wide", page_icon="·")
@@ -63,6 +65,66 @@ def section_heading(eyebrow: str, title: str) -> None:
     )
 
 
+def _email_gate() -> bool:
+    """
+    Show a one-time email capture form.
+
+    Returns True once the user has submitted a valid email (persisted in
+    session state for the rest of the session).  When Mailchimp is not
+    configured the gate still collects the address locally but does not
+    block access — useful for local development and preview deploys.
+    """
+    if st.session_state.get("gate_passed"):
+        return True
+
+    sample_csv = (Path(__file__).parent.parent / "samples" / "sample_roster.csv").read_bytes()
+
+    st.markdown(
+        bezel(
+            "<div class='aside-kicker'>Free resource</div>"
+            "<p class='aside-copy'>Download the sample roster template and get instant access to the screening tool.</p>",
+            "rise d2",
+        ),
+        unsafe_allow_html=True,
+    )
+
+    with st.form("lead_gate", clear_on_submit=False):
+        email = st.text_input(
+            "Work email address",
+            placeholder="captain@yourairline.com",
+            help="Your email is used only to send you the template. No spam.",
+        )
+        submitted = st.form_submit_button("Get the free template →")
+
+    if not submitted:
+        return False
+
+    email = email.strip()
+    if not email or "@" not in email or "." not in email.split("@")[-1]:
+        st.error("Enter a valid email address to continue.")
+        return False
+
+    result = subscribe(email)
+    if result.result == SubscribeResult.ERROR:
+        st.warning(
+            f"We could not add you to the mailing list right now ({result.detail}). "
+            "You can still access the tool."
+        )
+
+    st.session_state["gate_passed"] = True
+    st.session_state["gate_email"] = email
+
+    st.download_button(
+        "⬇ Download sample_roster.csv",
+        data=sample_csv,
+        file_name="sample_roster.csv",
+        mime="text/csv",
+        help="A synthetic 20-row roster ready to upload.",
+    )
+    st.success("You're in. Upload the sample file above or your own roster below.")
+    return True
+
+
 def main() -> None:
     inject_theme()
     st.markdown(
@@ -86,6 +148,10 @@ def main() -> None:
         + "</div></div>",
         unsafe_allow_html=True,
     )
+
+    if not _email_gate():
+        return
+
     st.markdown(bezel(f"<p class='notice-copy'>{DISCLAIMER}</p>", "rise d2"), unsafe_allow_html=True)
 
     section_heading("01  /  Configuration", "Upload & framework")
@@ -179,7 +245,8 @@ def main() -> None:
     if uploaded is None:
         st.markdown(
             bezel(
-                "<p class='notice-copy'>No file yet. A synthetic demonstration roster lives at <em>samples/sample_roster.csv</em>. Do not use confidential airline data on a shared machine.</p>"
+                "<p class='notice-copy'>No file uploaded yet. Use the sample roster you downloaded, "
+                "or upload your own CSV / XLSX. Do not upload confidential airline rosters to a shared machine.</p>"
             ),
             unsafe_allow_html=True,
         )
