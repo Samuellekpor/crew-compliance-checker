@@ -74,14 +74,6 @@ def section_heading(eyebrow: str, title: str) -> None:
     )
 
 
-def section_heading(eyebrow: str, title: str) -> None:
-    st.markdown(
-        f"<div class='section-head rise'><span class='eyebrow'>{eyebrow}</span>"
-        f"<h2>{title}</h2></div>",
-        unsafe_allow_html=True,
-    )
-
-
 def _render_sample_downloads(framework_id: str) -> None:
     """Ungated sample access — value before email, near the roster uploader."""
     with st.expander("Don't have a roster? Download a sample and try the checker", expanded=False):
