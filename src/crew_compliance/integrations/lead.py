@@ -77,7 +77,7 @@ def submit_lead(payload: LeadPayload) -> LeadResponse:
     """
     email = payload.email.strip().lower()
     if not validate_email(email):
-        return LeadResponse(LeadResult.INVALID, "Enter a valid email address.")
+        return LeadResponse(LeadResult.INVALID, "Please enter a valid email address.")
 
     merge_fields = {
         key: value
@@ -112,7 +112,7 @@ def submit_lead(payload: LeadPayload) -> LeadResponse:
     if mc.result == SubscribeResult.SKIPPED and nw.result == n8n_client.WebhookResult.SKIPPED:
         return LeadResponse(
             LeadResult.SKIPPED,
-            "Lead backends not configured — report unlocked for local use.",
+            "Email list is not connected yet — your report is still unlocked for this session.",
             mailchimp=mc_status,
             n8n=n8n_status,
         )
@@ -120,7 +120,7 @@ def submit_lead(payload: LeadPayload) -> LeadResponse:
     if mc.result == SubscribeResult.ERROR and nw.result == n8n_client.WebhookResult.ERROR:
         return LeadResponse(
             LeadResult.PARTIAL,
-            "Lead could not be recorded right now. Your report is still available.",
+            "We could not save your email right now. Your report is still available.",
             mailchimp=mc_status,
             n8n=n8n_status,
         )
@@ -128,9 +128,9 @@ def submit_lead(payload: LeadPayload) -> LeadResponse:
     if mc.result == SubscribeResult.ERROR or nw.result == n8n_client.WebhookResult.ERROR:
         return LeadResponse(
             LeadResult.PARTIAL,
-            "Lead recorded with a partial delivery warning. Your report is available.",
+            "Your email was saved, but one update step failed. Your report is still available.",
             mailchimp=mc_status,
             n8n=n8n_status,
         )
 
-    return LeadResponse(LeadResult.OK, "Report unlocked.", mailchimp=mc_status, n8n=n8n_status)
+    return LeadResponse(LeadResult.OK, "Report unlocked for this session.", mailchimp=mc_status, n8n=n8n_status)
