@@ -25,6 +25,8 @@ Crew planners need a fast way to see whether a spreadsheet roster *might* confli
 - Duty assignment check: screen one proposed duty against the loaded roster with the same engine
 - Calendar / Gantt roster view with finding pins on the actual duty bar
 - CSV, Excel, and branded PDF report export
+- Ungated sample EASA / FAA rosters (CSV + XLSX) for users without their own file
+- Short post-analysis lead capture to unlock PDF/Excel (CSV stays free); optional role and future-product interest
 
 Pricing ($29/month or $290/year) is a product requirement only. Payment processing is not implemented (see V3).
 
@@ -100,7 +102,25 @@ If an existing app is stuck installing packages, reboot or recreate it after thi
 
 **Operational caution:** Community Cloud apps are reachable on the public internet. Roster files are processed on Streamlit’s infrastructure. Do not upload confidential airline rosters to the hosted app. Keep sensitive screening on a local `streamlit run`.
 
-Use `samples/sample_roster.csv` for a synthetic demo. Do not upload confidential airline rosters to shared machines or logs.
+### Sample rosters
+
+In the app, open **Don't have a roster?** under the roster uploader and download an EASA or FAA synthetic sample (CSV or XLSX). Files are also generated from `src/crew_compliance/samples/demo_rosters.py` and mirrored under `samples/`. They are **synthetic demonstration data — not for operational use**. Intended findings are documented in `SAMPLE_CASES` and asserted by `tests/test_samples.py`.
+
+Do not upload confidential airline rosters to shared machines or logs.
+
+### Lead capture (report unlock)
+
+You can open the app, select a framework, download a sample, upload a roster, analyze, and review findings **without** an email.
+
+CSV export stays free. Branded PDF and Excel exports ask once per session for:
+
+- Email (required)
+- Role (optional)
+- “What would you like software to help with next?” (optional)
+
+Leads are sent to Mailchimp (merge fields) and optionally to an n8n webhook. External failures never hide the analysis already on screen. Copy `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml` (or set the same keys in Community Cloud / Render) and create the Mailchimp merge fields listed there.
+
+Roster contents are **not** included in the lead payload.
 
 ## Run tests
 
