@@ -33,7 +33,16 @@ from crew_compliance.reporting.gantt import build_gantt_view, render_gantt_html
 from crew_compliance.reporting.pdf import export_pdf
 from crew_compliance.reporting.templates import credential_template_xlsx, opening_balance_template_xlsx
 
-from crew_compliance.integrations.mailchimp import SubscribeResult, subscribe
+from crew_compliance.integrations.lead import (
+    INTEREST_OPTIONS,
+    ROLE_OPTIONS,
+    LeadPayload,
+    LeadResult,
+    submit_lead,
+    validate_email,
+)
+from crew_compliance.samples.demo_rosters import DISCLAIMER as SAMPLE_DISCLAIMER
+from crew_compliance.samples.demo_rosters import is_sample_filename, list_samples, sample_bytes, sample_filename
 
 from mapping_ui import column_mapping_form
 
@@ -65,64 +74,137 @@ def section_heading(eyebrow: str, title: str) -> None:
     )
 
 
-def _email_gate() -> bool:
-    """
-    Show a one-time email capture form.
-
-    Returns True once the user has submitted a valid email (persisted in
-    session state for the rest of the session).  When Mailchimp is not
-    configured the gate still collects the address locally but does not
-    block access — useful for local development and preview deploys.
-    """
-    if st.session_state.get("gate_passed"):
-        return True
-
-    sample_csv = (Path(__file__).parent.parent / "samples" / "sample_roster.csv").read_bytes()
-
+def section_heading(eyebrow: str, title: str) -> None:
     st.markdown(
-        bezel(
-            "<div class='aside-kicker'>Free resource</div>"
-            "<p class='aside-copy'>Download the sample roster template and get instant access to the screening tool.</p>",
-            "rise d2",
-        ),
+        f"<div class='section-head rise'><span class='eyebrow'>{eyebrow}</span>"
+        f"<h2>{title}</h2></div>",
         unsafe_allow_html=True,
     )
 
-    with st.form("lead_gate", clear_on_submit=False):
-        email = st.text_input(
-            "Work email address",
-            placeholder="captain@yourairline.com",
-            help="Your email is used only to send you the template. No spam.",
+
+def _render_sample_downloads(framework_id: str) -> None:
+    """Ungated sample access — value before email, near the roster uploader."""
+    with st.expander("Don't have a roster? Download a sample and try the checker", expanded=False):
+        st.caption(
+            f"{SAMPLE_DISCLAIMER} Pick a framework-aligned sample, download it, then upload it above."
         )
-        submitted = st.form_submit_button("Get the free template →")
+        samples = list_samples()
+        for item in samples:
+            sid = item["sample_id"]
+            label = item["label"]
+            preferred = item["framework_id"] == framework_id
+            mark = " · matches your framework" if preferred else ""
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.download_button(
+                    f"Download {label} sample (CSV){mark}",
+                    data=sample_bytes(sid, "csv"),
+                    file_name=sample_filename(sid, "csv"),
+                    mime="text/csv",
+                    key=f"dl_{sid}_csv",
+                ):
+                    st.session_state["sample_downloaded"] = sid
+                    st.session_state["sample_used"] = True
+            with c2:
+                if st.download_button(
+                    f"Download {label} sample (XLSX)",
+                    data=sample_bytes(sid, "xlsx"),
+                    file_name=sample_filename(sid, "xlsx"),
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key=f"dl_{sid}_xlsx",
+                ):
+                    st.session_state["sample_downloaded"] = sid
+                    st.session_state["sample_used"] = True
 
-    if not submitted:
-        return False
 
-    email = email.strip()
-    if not email or "@" not in email or "." not in email.split("@")[-1]:
-        st.error("Enter a valid email address to continue.")
-        return False
-
-    result = subscribe(email)
-    if result.result == SubscribeResult.ERROR:
-        st.warning(
-            f"We could not add you to the mailing list right now ({result.detail}). "
-            "You can still access the tool."
-        )
-
-    st.session_state["gate_passed"] = True
-    st.session_state["gate_email"] = email
-
-    st.download_button(
-        "⬇ Download sample_roster.csv",
-        data=sample_csv,
-        file_name="sample_roster.csv",
+def _unlock_report_exports(
+    result,
+    *,
+    framework_id: str,
+    company_name: str,
+    logo_bytes: bytes | None,
+) -> None:
+    """
+    CSV stays free. PDF and Excel require a one-time short lead form per session.
+    External lead failures never hide the analysis the user already completed.
+    """
+    c1, c2, c3 = st.columns(3)
+    c1.download_button(
+        "Export CSV",
+        data=export_csv(result),
+        file_name="crew_compliance_report.csv",
         mime="text/csv",
-        help="A synthetic 20-row roster ready to upload.",
+        help="Findings table as CSV — available without an email.",
     )
-    st.success("You're in. Upload the sample file above or your own roster below.")
-    return True
+
+    unlocked = bool(st.session_state.get("lead_report_unlocked"))
+
+    if not unlocked:
+        st.markdown(
+            bezel(
+                "<div class='aside-kicker'>Get your detailed report</div>"
+                "<p class='aside-copy'>Enter your email to unlock the branded PDF and Excel "
+                "exports and receive occasional updates about new aviation tools. "
+                "We will not use your roster data for marketing.</p>"
+            ),
+            unsafe_allow_html=True,
+        )
+        with st.form("lead_report_form", clear_on_submit=False):
+            email = st.text_input("Email", placeholder="you@airline.com")
+            role = st.selectbox(
+                "What best describes your role? (optional)",
+                options=["", *ROLE_OPTIONS],
+                format_func=lambda v: "—" if v == "" else v,
+            )
+            interest = st.selectbox(
+                "What would you like software to help with next? (optional)",
+                options=["", *INTEREST_OPTIONS],
+                format_func=lambda v: "—" if v == "" else v,
+            )
+            submitted = st.form_submit_button("Get my report")
+
+        if submitted:
+            if not validate_email(email):
+                st.error("Enter a valid email address to unlock the report.")
+            else:
+                response = submit_lead(
+                    LeadPayload(
+                        email=email.strip(),
+                        role=role or None,
+                        interest=interest or None,
+                        framework_id=framework_id,
+                        sample_used=bool(st.session_state.get("sample_used")),
+                        report_requested=True,
+                    )
+                )
+                st.session_state["lead_email"] = email.strip().lower()
+                st.session_state["lead_report_unlocked"] = True
+                st.session_state["lead_interest"] = interest or None
+                if response.result == LeadResult.INVALID:
+                    st.session_state["lead_report_unlocked"] = False
+                    st.error(response.detail)
+                elif response.result == LeadResult.PARTIAL:
+                    st.warning(response.detail)
+                    st.rerun()
+                else:
+                    st.success("Report unlocked for this session.")
+                    st.rerun()
+        return
+
+    c2.download_button(
+        "Export Excel",
+        data=export_xlsx(result),
+        file_name="crew_compliance_report.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    c3.download_button(
+        "Export PDF",
+        data=export_pdf(result, company_name=company_name, logo_bytes=logo_bytes),
+        file_name="crew_compliance_report.pdf",
+        mime="application/pdf",
+    )
+    if st.session_state.get("lead_interest") in {"Crew scheduling", "Roster optimization"}:
+        st.caption("Thanks — noted your interest in crew scheduling / roster optimization tools.")
 
 
 def main() -> None:
@@ -148,9 +230,6 @@ def main() -> None:
         + "</div></div>",
         unsafe_allow_html=True,
     )
-
-    if not _email_gate():
-        return
 
     st.markdown(bezel(f"<p class='notice-copy'>{DISCLAIMER}</p>", "rise d2"), unsafe_allow_html=True)
 
@@ -213,6 +292,7 @@ def main() -> None:
                     parameter_overrides.setdefault(slot["rule_id"], {})[slot["key"]] = float(value)
 
     uploaded = st.file_uploader("Roster file — CSV or XLSX", type=["csv", "xlsx"])
+    _render_sample_downloads(framework_id)
     opening_file = st.file_uploader(
         "Opening balances — CSV or XLSX (optional)",
         type=["csv", "xlsx"],
@@ -245,14 +325,17 @@ def main() -> None:
     if uploaded is None:
         st.markdown(
             bezel(
-                "<p class='notice-copy'>No file uploaded yet. Use the sample roster you downloaded, "
-                "or upload your own CSV / XLSX. Do not upload confidential airline rosters to a shared machine.</p>"
+                "<p class='notice-copy'>No file uploaded yet. Download a sample above, or upload your own "
+                "CSV / XLSX. Do not upload confidential airline rosters to a shared machine.</p>"
             ),
             unsafe_allow_html=True,
         )
         return
     if framework_id not in FRAMEWORKS:
         return
+
+    if is_sample_filename(uploaded.name):
+        st.session_state["sample_used"] = True
 
     try:
         table = load_table(uploaded.getvalue(), filename=uploaded.name)
@@ -586,20 +669,12 @@ def main() -> None:
             st.markdown(limitations, unsafe_allow_html=True)
 
     section_heading("06  /  Record", "Export the screening")
-    c1, c2, c3 = st.columns(3)
-    c1.download_button("Export CSV", data=export_csv(result), file_name="crew_compliance_report.csv", mime="text/csv")
-    c2.download_button(
-        "Export Excel",
-        data=export_xlsx(result),
-        file_name="crew_compliance_report.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
     logo_bytes = logo_file.getvalue() if logo_file is not None else None
-    c3.download_button(
-        "Export PDF",
-        data=export_pdf(result, company_name=company_name, logo_bytes=logo_bytes),
-        file_name="crew_compliance_report.pdf",
-        mime="application/pdf",
+    _unlock_report_exports(
+        result,
+        framework_id=st.session_state.get("analysis_framework_id") or framework_id,
+        company_name=company_name,
+        logo_bytes=logo_bytes,
     )
 
 
