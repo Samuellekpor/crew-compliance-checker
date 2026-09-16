@@ -33,9 +33,18 @@ class SubscribeResponse:
     detail: str = ""
 
 
-def subscribe(email: str, api_key: str | None = None, list_id: str | None = None) -> SubscribeResponse:
+def subscribe(
+    email: str,
+    api_key: str | None = None,
+    list_id: str | None = None,
+    merge_fields: dict[str, str] | None = None,
+) -> SubscribeResponse:
     """
     Add *email* to the Mailchimp audience identified by *list_id*.
+
+    Optional *merge_fields* map Mailchimp merge tags (e.g. ROLE, FRAMEWORK)
+    for lead-magnet context. Missing tags on the audience are ignored by
+    Mailchimp or returned as API errors — callers treat ERROR as non-blocking.
 
     Falls back to MAILCHIMP_API_KEY / MAILCHIMP_LIST_ID environment variables.
     Returns SubscribeResult.SKIPPED when credentials are absent so callers can
@@ -51,9 +60,18 @@ def subscribe(email: str, api_key: str | None = None, list_id: str | None = None
     member_hash = hashlib.md5(email.strip().lower().encode()).hexdigest()
     url = f"https://{server}.api.mailchimp.com/3.0/lists/{list_id}/members/{member_hash}"
 
-    payload = json.dumps(
-        {"email_address": email.strip().lower(), "status_if_new": "subscribed", "status": "subscribed"}
-    ).encode()
+    body: dict = {
+        "email_address": email.strip().lower(),
+        "status_if_new": "subscribed",
+        "status": "subscribed",
+    }
+    if merge_fields:
+        # Only send non-empty values — empty strings can clear audience fields unintentionally.
+        cleaned = {key: value for key, value in merge_fields.items() if value}
+        if cleaned:
+            body["merge_fields"] = cleaned
+
+    payload = json.dumps(body).encode()
 
     req = urllib.request.Request(
         url,
@@ -68,18 +86,18 @@ def subscribe(email: str, api_key: str | None = None, list_id: str | None = None
 
     try:
         with urllib.request.urlopen(req, timeout=6) as resp:
-            body = json.loads(resp.read())
-            if body.get("status") in ("subscribed", "pending"):
+            body_json = json.loads(resp.read())
+            if body_json.get("status") in ("subscribed", "pending"):
                 return SubscribeResponse(SubscribeResult.OK)
             return SubscribeResponse(SubscribeResult.ALREADY)
     except urllib.error.HTTPError as exc:
-        body = {}
+        err_body = {}
         try:
-            body = json.loads(exc.read())
+            err_body = json.loads(exc.read())
         except Exception:
             pass
-        title = body.get("title", "")
-        if "Member Exists" in title or exc.code == 400 and "already a list member" in body.get("detail", "").lower():
+        title = err_body.get("title", "")
+        if "Member Exists" in title or exc.code == 400 and "already a list member" in err_body.get("detail", "").lower():
             return SubscribeResponse(SubscribeResult.ALREADY)
         return SubscribeResponse(SubscribeResult.ERROR, f"Mailchimp {exc.code}: {title}")
     except Exception as exc:  # network timeout, DNS, etc.

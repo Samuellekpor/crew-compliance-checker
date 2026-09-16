@@ -30,3 +30,39 @@ def test_configured_returns_false_when_missing(monkeypatch):
     monkeypatch.delenv("MAILCHIMP_API_KEY", raising=False)
     monkeypatch.delenv("MAILCHIMP_LIST_ID", raising=False)
     assert not configured()
+
+
+def test_subscribe_includes_merge_fields_in_payload(monkeypatch):
+    import json
+
+    captured = {}
+
+    class _Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"status":"subscribed"}'
+
+    def fake_urlopen(req, timeout=6):
+        captured["url"] = req.full_url
+        captured["body"] = json.loads(req.data.decode())
+        return _Resp()
+
+    monkeypatch.setattr(
+        "crew_compliance.integrations.mailchimp.urllib.request.urlopen",
+        fake_urlopen,
+    )
+    result = subscribe(
+        "ops@example.com",
+        api_key="test-key-server3",
+        list_id="list123",
+        merge_fields={"ROLE": "Crew Controller", "FRAMEWORK": "easa", "SAMPLE": "yes", "EMPTY": ""},
+    )
+    assert result.result == SubscribeResult.OK
+    assert captured["body"]["merge_fields"]["ROLE"] == "Crew Controller"
+    assert captured["body"]["merge_fields"]["FRAMEWORK"] == "easa"
+    assert "EMPTY" not in captured["body"]["merge_fields"]
