@@ -11,10 +11,9 @@ from openpyxl.utils.dataframe import dataframe_to_rows
 from crew_compliance.domain.models import AnalysisResult, Finding
 
 DISCLAIMER = (
-    "This report is a compliance screening and review aid. It is not an authoritative "
-    "replacement for an operator's approved compliance monitoring system, not legal advice, "
-    "and not a determination by a regulator. Findings are potential issues or data limitations "
-    "that require review by a qualified aviation professional."
+    "This is a screening tool for potential flight-time, duty, and rest issues. "
+    "It is not legal advice, not a regulator decision, and not a substitute for your "
+    "approved compliance system. Every finding needs review by a qualified aviation professional."
 )
 
 
