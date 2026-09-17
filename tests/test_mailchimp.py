@@ -21,7 +21,14 @@ def test_basic_auth_format():
     assert decoded == "user:mykey"
 
 
-def test_subscribe_skipped_when_no_credentials():
+def test_subscribe_skipped_when_no_credentials(monkeypatch):
+    # Ignore local .streamlit/secrets.toml so the SKIPPED path stays testable.
+    monkeypatch.delenv("MAILCHIMP_API_KEY", raising=False)
+    monkeypatch.delenv("MAILCHIMP_LIST_ID", raising=False)
+    monkeypatch.setattr(
+        "crew_compliance.integrations.mailchimp._streamlit_secret",
+        lambda _key: None,
+    )
     result = subscribe("pilot@example.com", api_key=None, list_id=None)
     assert result.result == SubscribeResult.SKIPPED
 
@@ -29,6 +36,10 @@ def test_subscribe_skipped_when_no_credentials():
 def test_configured_returns_false_when_missing(monkeypatch):
     monkeypatch.delenv("MAILCHIMP_API_KEY", raising=False)
     monkeypatch.delenv("MAILCHIMP_LIST_ID", raising=False)
+    monkeypatch.setattr(
+        "crew_compliance.integrations.mailchimp._streamlit_secret",
+        lambda _key: None,
+    )
     assert not configured()
 
 
