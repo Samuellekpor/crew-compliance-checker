@@ -594,63 +594,62 @@ def main() -> None:
     frame = findings_frame(result)
     if frame.empty:
         st.markdown(bezel("<p class='notice-copy'>No findings for this roster.</p>"), unsafe_allow_html=True)
-        return
-
-    f1, f2, f3, f4, f5 = st.columns(5)
-    severity = f1.multiselect("Severity", sorted(frame["severity"].unique()))
-    crew = f2.multiselect("Crew member", sorted(frame["crew_name"].unique()))
-    rule = f3.multiselect("Rule", sorted(frame["rule_id"].unique()))
-    kind = f4.multiselect("Kind", sorted(frame["kind"].unique()))
-    date_filter = f5.multiselect("Date", sorted({d for d in frame["date"].tolist() if d}))
-    view = frame.copy()
-    if severity:
-        view = view[view["severity"].isin(severity)]
-    if crew:
-        view = view[view["crew_name"].isin(crew)]
-    if rule:
-        view = view[view["rule_id"].isin(rule)]
-    if kind:
-        view = view[view["kind"].isin(kind)]
-    if date_filter:
-        view = view[view["date"].isin(date_filter)]
-
-    display_cols = ["severity", "crew_name", "date", "rule_name", "actual", "required", "difference", "kind"]
-    st.dataframe(view[display_cols], use_container_width=True, hide_index=True)
-
-    section_heading("05  /  Detail", "Finding explanation")
-    if view.empty:
-        st.markdown(bezel("<p class='notice-copy'>No rows match these filters.</p>"), unsafe_allow_html=True)
     else:
-        labels = {
-            row.finding_id: f"{row.severity.upper()} · {row.crew_name} · {row.rule_id}"
-            for row in view.itertuples()
-        }
-        selected_id = st.selectbox("Select a finding", list(labels.keys()), format_func=lambda k: labels[k])
-        selected = next(f for f in result.findings if f.finding_id == selected_id)
-        assumptions = "".join(f"<li>{escape(item)}</li>" for item in selected.assumptions)
-        limitations = "".join(f"<li>{escape(item)}</li>" for item in selected.limitations)
-        st.markdown(
-            bezel(
-                f"<span class='eyebrow'>{escape(selected.citation)}</span>"
-                f"<h2 style='margin-top:0.4rem'>{escape(selected.rule_name)}</h2>"
-                f"<p class='notice-copy'>{escape(selected.explanation)}</p>"
-                "<div class='detail-grid' style='margin-top:1.25rem'>"
-                f"<div><div class='meta-line'>Crew</div><p class='meta-val'>{escape(selected.crew_name)} ({escape(selected.crew_id)})</p></div>"
-                f"<div><div class='meta-line'>Duty / flight</div><p class='meta-val'>{escape(selected.duty_id or '—')} · {escape(selected.flight_id or '—')}</p></div>"
-                f"<div><div class='meta-line'>Actual</div><p class='meta-val'>{escape(str(selected.actual))} {escape(selected.units)}</p></div>"
-                f"<div><div class='meta-line'>Limit · difference</div><p class='meta-val'>{escape(str(selected.required))} · {escape(str(selected.difference))}</p></div>"
-                f"<div><div class='meta-line'>Opening balance</div><p class='meta-val'>{escape(_opening_balance_label(selected.evidence))}</p></div>"
-                f"<div><div class='meta-line'>Credential</div><p class='meta-val'>{escape(_credential_label(selected.evidence))}</p></div>"
-                "</div>"
-            ),
-            unsafe_allow_html=True,
-        )
-        with st.expander("Evidence, assumptions, and limitations"):
-            st.json(selected.evidence)
-            st.markdown("**Assumptions**")
-            st.markdown(assumptions, unsafe_allow_html=True)
-            st.markdown("**Limitations**")
-            st.markdown(limitations, unsafe_allow_html=True)
+        f1, f2, f3, f4, f5 = st.columns(5)
+        severity = f1.multiselect("Severity", sorted(frame["severity"].unique()))
+        crew = f2.multiselect("Crew member", sorted(frame["crew_name"].unique()))
+        rule = f3.multiselect("Rule", sorted(frame["rule_id"].unique()))
+        kind = f4.multiselect("Kind", sorted(frame["kind"].unique()))
+        date_filter = f5.multiselect("Date", sorted({d for d in frame["date"].tolist() if d}))
+        view = frame.copy()
+        if severity:
+            view = view[view["severity"].isin(severity)]
+        if crew:
+            view = view[view["crew_name"].isin(crew)]
+        if rule:
+            view = view[view["rule_id"].isin(rule)]
+        if kind:
+            view = view[view["kind"].isin(kind)]
+        if date_filter:
+            view = view[view["date"].isin(date_filter)]
+
+        display_cols = ["severity", "crew_name", "date", "rule_name", "actual", "required", "difference", "kind"]
+        st.dataframe(view[display_cols], use_container_width=True, hide_index=True)
+
+        section_heading("05  /  Detail", "Finding explanation")
+        if view.empty:
+            st.markdown(bezel("<p class='notice-copy'>No rows match these filters.</p>"), unsafe_allow_html=True)
+        else:
+            labels = {
+                row.finding_id: f"{row.severity.upper()} · {row.crew_name} · {row.rule_id}"
+                for row in view.itertuples()
+            }
+            selected_id = st.selectbox("Select a finding", list(labels.keys()), format_func=lambda k: labels[k])
+            selected = next(f for f in result.findings if f.finding_id == selected_id)
+            assumptions = "".join(f"<li>{escape(item)}</li>" for item in selected.assumptions)
+            limitations = "".join(f"<li>{escape(item)}</li>" for item in selected.limitations)
+            st.markdown(
+                bezel(
+                    f"<span class='eyebrow'>{escape(selected.citation)}</span>"
+                    f"<h2 style='margin-top:0.4rem'>{escape(selected.rule_name)}</h2>"
+                    f"<p class='notice-copy'>{escape(selected.explanation)}</p>"
+                    "<div class='detail-grid' style='margin-top:1.25rem'>"
+                    f"<div><div class='meta-line'>Crew</div><p class='meta-val'>{escape(selected.crew_name)} ({escape(selected.crew_id)})</p></div>"
+                    f"<div><div class='meta-line'>Duty / flight</div><p class='meta-val'>{escape(selected.duty_id or '—')} · {escape(selected.flight_id or '—')}</p></div>"
+                    f"<div><div class='meta-line'>Actual</div><p class='meta-val'>{escape(str(selected.actual))} {escape(selected.units)}</p></div>"
+                    f"<div><div class='meta-line'>Limit · difference</div><p class='meta-val'>{escape(str(selected.required))} · {escape(str(selected.difference))}</p></div>"
+                    f"<div><div class='meta-line'>Opening balance</div><p class='meta-val'>{escape(_opening_balance_label(selected.evidence))}</p></div>"
+                    f"<div><div class='meta-line'>Credential</div><p class='meta-val'>{escape(_credential_label(selected.evidence))}</p></div>"
+                    "</div>"
+                ),
+                unsafe_allow_html=True,
+            )
+            with st.expander("Evidence, assumptions, and limitations"):
+                st.json(selected.evidence)
+                st.markdown("**Assumptions**")
+                st.markdown(assumptions, unsafe_allow_html=True)
+                st.markdown("**Limitations**")
+                st.markdown(limitations, unsafe_allow_html=True)
 
     section_heading("06  /  Export", "Download your report")
     logo_bytes = logo_file.getvalue() if logo_file is not None else None
