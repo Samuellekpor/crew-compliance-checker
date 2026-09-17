@@ -43,6 +43,16 @@ class LeadResult(str, Enum):
     INVALID = "invalid"
     PARTIAL = "partial"  # stored somewhere, at least one backend failed
     SKIPPED = "skipped"  # no backends configured — still unlock report in UI
+    RATE_LIMITED = "rate_limited"
+
+
+# Soft per-session cap so a public demo cannot spam Mailchimp/n8n endlessly.
+MAX_LEAD_SUBMISSIONS_PER_SESSION = 8
+
+
+def allow_lead_attempt(attempts_so_far: int, *, limit: int = MAX_LEAD_SUBMISSIONS_PER_SESSION) -> bool:
+    """Return True if another lead submission is allowed in this session."""
+    return attempts_so_far < limit
 
 
 @dataclass(frozen=True)

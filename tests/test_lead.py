@@ -109,6 +109,22 @@ def test_n8n_post_skipped_without_url(monkeypatch):
     assert result.result == WebhookResult.SKIPPED
 
 
+def test_n8n_rejects_non_https_and_private_hosts():
+    from crew_compliance.integrations.n8n import url_allowed
+
+    assert url_allowed("https://hooks.n8n.cloud/webhook/abc")
+    assert not url_allowed("http://hooks.n8n.cloud/webhook/abc")
+    assert not url_allowed("https://localhost/hook")
+    assert not url_allowed("https://127.0.0.1/hook")
+    assert not url_allowed("https://169.254.169.254/latest/meta-data")
+    assert not url_allowed("https://192.168.1.10/hook")
+
+
+def test_n8n_post_rejects_disallowed_url():
+    result = post_lead({"email": "a@b.com"}, webhook_url="http://example.com/hook")
+    assert result.result == WebhookResult.ERROR
+
+
 def test_n8n_post_ok(monkeypatch):
     class _Resp:
         status = 200
@@ -137,3 +153,11 @@ def test_n8n_post_error_is_graceful(monkeypatch):
     monkeypatch.setattr("crew_compliance.integrations.n8n.urllib.request.urlopen", boom)
     result = post_lead({"email": "a@b.com"}, webhook_url="https://example.com/hook")
     assert result.result == WebhookResult.ERROR
+
+
+def test_allow_lead_attempt_caps_session_spam():
+    from crew_compliance.integrations.lead import allow_lead_attempt
+
+    assert allow_lead_attempt(0)
+    assert allow_lead_attempt(7)
+    assert not allow_lead_attempt(8)

@@ -38,6 +38,7 @@ from crew_compliance.integrations.lead import (
     ROLE_OPTIONS,
     LeadPayload,
     LeadResult,
+    allow_lead_attempt,
     submit_lead,
     validate_email,
 )
@@ -157,7 +158,10 @@ def _unlock_report_exports(
         if submitted:
             if not validate_email(email):
                 st.error("Please enter a valid email address.")
+            elif not allow_lead_attempt(int(st.session_state.get("lead_attempts", 0))):
+                st.error("Too many report requests in this session. Refresh the page to try again later.")
             else:
+                st.session_state["lead_attempts"] = int(st.session_state.get("lead_attempts", 0)) + 1
                 response = submit_lead(
                     LeadPayload(
                         email=email.strip(),
